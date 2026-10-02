@@ -1,0 +1,20 @@
+{
+  "code": 200,
+  "status": {
+    "type": "status",
+    "id": "463440424141459456",
+    "url": "https://x.com/Interior/status/463440424141459456",
+    "text": "Sunsets don't get much better than this one over @GrandTetonNPS. #nature #sunset",
+    "media": {
+      "all": [{"type":"photo","id":"463440423352950784","url":"https://pbs.twimg.com/media/Bm54nBCCYAACwBi.jpg?name=orig","width":960,"height":541}],
+      "photos": [{"type":"photo","id":"463440423352950784","url":"https://pbs.twimg.com/media/Bm54nBCCYAACwBi.jpg?name=orig","width":960,"height":541}]
+    },
+    "raw_text": {"text":"Sunsets don't get much better than this one over @GrandTetonNPS. #nature #sunset http://t.co/YuKy2rcjyU"},
+    "author": {
+      "name":"U.S. Department of the Interior",
+      "screen_name":"Interior",
+      "avatar_url":"https://pbs.twimg.com/profile_images/432081479/DOI_LOGO_200x200.jpg",
+      "protected":false
+    }
+  }
+}

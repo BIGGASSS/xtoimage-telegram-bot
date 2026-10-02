@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xtoimage-telegram-bot"
+version = "0.1.0"
+description = "Self-hosted Telegram bot that turns public X posts into attributed image cards"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "python-telegram-bot>=22.5,<23",
+  "httpx[socks]>=0.28,<0.29",
+  "playwright>=1.55,<2",
+  "pillow>=11.3,<13",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.4,<10", "pytest-asyncio>=1.2,<2", "ruff>=0.13,<1", "mypy>=1.18,<2"]
+
+[project.scripts]
+xtoimage-bot = "xtoimage_bot.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xtoimage_bot"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["browser: requires a locally installed Chromium browser"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/xtoimage_bot"]

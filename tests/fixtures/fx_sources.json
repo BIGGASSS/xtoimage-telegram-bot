@@ -1,0 +1,12 @@
+{
+  "verified_at_utc": "2026-10-02T20:31:00Z",
+  "description": "Minimized successful public responses, not complete API snapshots. Counts are historical fixture values, not current metrics.",
+  "fixtures": {
+    "fx_jack.json": {"source": "https://api.fxtwitter.com/2/status/20", "public_post": "https://x.com/jack/status/20", "observed_http_status": 200},
+    "fx_photo.json": {"source": "https://api.fxtwitter.com/2/status/463440424141459456", "public_post": "https://x.com/Interior/status/463440424141459456", "observed_http_status": 200},
+    "fx_not_found.json": {"source": "https://api.fxtwitter.com/2/status/00000000000000000000", "observed_http_status": 404}
+  },
+  "schema": "https://docs.fxembed.com/api/twitter/operations/2statusid/",
+  "official_x_schema": "https://docs.x.com/openapi.json",
+  "official_x_verification": "Schema and mocked contract only; live authenticated lookup not run."
+}
