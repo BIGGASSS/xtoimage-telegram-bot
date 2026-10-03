@@ -105,6 +105,33 @@ def test_only_available_counts_and_one_quote(post: Post) -> None:
     assert "02 Oct 2026 · 19:00 UTC" in document
 
 
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_single_clean_card_without_injected_source_urls(post: Post, theme: str) -> None:
+    quote = replace(post, url="https://x.com/quote/status/2", text="Quoted words")
+    document = build_html(replace(post, quote=quote), RenderAssets(), theme)  # type: ignore[arg-type]
+    assert document.count('<article class="card">') == 1
+    assert document.count('aria-label="Quoted post"') == 1
+    assert "x.com" not in document
+    for removed in ("masthead", "footnote", "source-url", "POST CARD", "FROM X", "linear-gradient"):
+        assert removed not in document
+    assert document.count("02 Oct 2026 · 19:00 UTC") == 2
+    assert "@example" in document
+
+
+def test_missing_timestamps_leave_no_empty_source_footer(post: Post) -> None:
+    undated = replace(post, created_at="")
+    document = build_html(replace(undated, quote=undated), RenderAssets())
+    assert '<footer class="source">' not in document
+
+
+def test_authored_links_are_preserved_as_post_content(post: Post) -> None:
+    text = "Read https://x.com/example/status/42 and https://example.com/?a=1&b=2"
+    document = build_html(replace(post, text=text, quote=replace(post, text=text)), RenderAssets())
+    assert document.count("https://x.com/example/status/42") == 2
+    assert document.count("https://example.com/?a=1&amp;b=2") == 2
+    assert post.url not in document
+
+
 def test_media_slots_remain_aligned_and_limit_four(post: Post) -> None:
     media = (Media("a"), Media("b", kind="video"), Media("c"), Media("d"), Media("e"))
     document = build_html(replace(post, media=media), RenderAssets(media=("", png_asset())))
@@ -156,7 +183,11 @@ async def test_real_screenshot_light_dark_and_media(renderer: Renderer, post: Po
         assert 500 < image.height <= MAX_HEIGHT
     light = Image.open(BytesIO(results[0])).convert("RGB")
     dark = Image.open(BytesIO(results[1])).convert("RGB")
-    assert sum(light.getpixel((0, 0))) > sum(dark.getpixel((0, 0)))
+    # The card itself fills the canvas: no gradient, margin, shadow, or outer frame.
+    for image, paper in ((light, (255, 255, 255)), (dark, (22, 35, 46))):
+        for point in ((0, 0), (WIDTH - 1, 0), (0, image.height - 1), (WIDTH - 1, image.height - 1)):
+            assert image.getpixel(point) == paper
+        assert image.getpixel((20, image.height // 2)) == paper
 
 
 @pytest.mark.browser
