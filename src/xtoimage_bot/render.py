@@ -36,26 +36,16 @@ _CSS = """
 html, body { margin: 0; padding: 0; width: 1080px; }
 body { font-family: 'Inter', 'Arial', 'Noto Sans', 'Noto Color Emoji', sans-serif; }
 #capture {
-  width: 1080px; padding: 52px; color: var(--ink);
-  background: var(--backdrop);
+  width: 1080px; color: var(--ink);
+  background: var(--paper);
   --ink: #18232d; --muted: #677481; --subtle: #84909a;
   --paper: #ffffff; --line: #e6ebee; --quote: #f8fafb; --media: #e8edf0;
-  --backdrop: linear-gradient(145deg, #e8eff3 0%, #f6f3ec 65%, #f2e9e3 100%);
-  --shadow: 0 24px 70px rgba(36, 56, 71, .10), 0 2px 5px rgba(36, 56, 71, .04);
 }
 #capture.dark {
   --ink: #f1f5f7; --muted: #a1b0bc; --subtle: #8396a6;
   --paper: #16232e; --line: #2c3b47; --quote: #1b2b38; --media: #0f1a22;
-  --backdrop: linear-gradient(140deg, #162a39 0%, #101b26 65%, #243137 100%);
-  --shadow: 0 24px 70px rgba(0, 0, 0, .28), 0 2px 5px rgba(0, 0, 0, .12);
 }
-.masthead { display: flex; align-items: center; justify-content: space-between;
-  margin: 0 4px 24px; color: var(--muted); font-size: 17px; line-height: 24px;
-  letter-spacing: 2px; font-weight: 700; }
-.masthead .brand { display: flex; align-items: center; gap: 13px; }
-.dot { width: 10px; height: 10px; background: #dd8665; border-radius: 50%; }
-.card { background: var(--paper); padding: 44px; border-radius: 30px;
-  box-shadow: var(--shadow); border: 1px solid var(--line); }
+.card { padding: 44px; }
 .author { display: flex; gap: 18px; align-items: center; min-width: 0; }
 .avatar { width: 76px; height: 76px; flex: 0 0 76px; border-radius: 50%;
   object-fit: cover; background: var(--media); }
@@ -98,13 +88,10 @@ body { font-family: 'Inter', 'Arial', 'Noto Sans', 'Noto Color Emoji', sans-seri
 .quote .source { margin-top: 20px; padding-top: 16px; font-size: 16px; }
 .source { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 24px;
   font-size: 18px; line-height: 1.6; color: var(--muted); overflow-wrap: anywhere; }
-.source-url { color: var(--muted); }
 .timestamp { margin-bottom: 3px; }
 .counts { display: flex; flex-wrap: wrap; gap: 12px 30px; margin-top: 20px;
   font-size: 18px; line-height: 1.5; color: var(--muted); }
 .counts b { font-weight: 700; color: var(--ink); margin-right: 6px; }
-.footnote { margin: 22px 4px 0; color: var(--muted); font-size: 16px;
-  line-height: 1.5; display: flex; justify-content: space-between; gap: 20px; }
 """
 
 
@@ -196,11 +183,9 @@ def _timestamp(raw: str) -> str:
 
 def _source(post: Post) -> str:
     timestamp = _timestamp(post.created_at)
-    return (
-        '<footer class="source">'
-        + (f'<div class="timestamp">{_text(timestamp)}</div>' if timestamp else "")
-        + f'<div class="source-url">{_text(post.url)}</div></footer>'
-    )
+    if not timestamp:
+        return ""
+    return f'<footer class="source"><div class="timestamp">{_text(timestamp)}</div></footer>'
 
 
 def _counts(post: Post) -> str:
@@ -252,16 +237,14 @@ def build_html(post: Post, assets: RenderAssets, theme: Theme = "light") -> str:
         + f'<meta http-equiv="Content-Security-Policy" content="{csp}">'
         + '<meta name="color-scheme" content="light dark">'
         + f'<style>{_CSS}</style></head><body><main id="capture" class="{theme}">'
-        + '<div class="masthead"><span class="brand"><span class="dot"></span>POST CARD</span>'
-        + '<span>FROM X</span></div><article class="card">'
+        + '<article class="card">'
         + _author(post, assets.avatar)
         + (f'<div class="body" dir="auto">{_text(post.text)}</div>' if post.text else "")
         + _media(post, assets.media)
         + quote
         + _source(post)
         + _counts(post)
-        + '</article><div class="footnote"><span>Public post snapshot</span>'
-        + "<span>Content belongs to its author</span></div></main></body></html>"
+        + "</article></main></body></html>"
     )
 
 
