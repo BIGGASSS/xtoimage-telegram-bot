@@ -142,7 +142,9 @@ def _fx_post(raw: object, *, allow_quote: bool) -> Post:
     post_id, handle, name = _identity(data, author)
     warnings: list[str] = []
     raw_text = _optional_mapping(data.get("raw_text"))
-    text = _text(raw_text.get("text", data.get("text")), limit=MAX_TEXT)
+    # FxEmbed's display text omits hidden attachment/quote links and expands real URLs.
+    # Fall back only when absent: an empty display text is valid for media-only posts.
+    text = _text(data.get("text", raw_text.get("text")), limit=MAX_TEXT)
     if not text and not data.get("media"):
         raise UserError(_MALFORMED)
     media = _optional_mapping(data.get("media"))

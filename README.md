@@ -51,7 +51,7 @@ Use `/file` when exact quality matters: Telegram can recompress photos. The orig
 
 ### FxTwitter / FxEmbed (default)
 
-`POST_PROVIDER=fxtwitter` uses the documented [FxEmbed v2 status API](https://docs.fxembed.com/api/twitter/operations/2statusid/). No X credential is required. It sends the post ID to an independent third-party service, then downloads supported images from `pbs.twimg.com`.
+`POST_PROVIDER=fxtwitter` uses the documented [FxEmbed v2 status API](https://docs.fxembed.com/api/twitter/operations/2statusid/). No X credential is required. It sends the post ID to an independent third-party service, then downloads supported images from `pbs.twimg.com`. Cards use the provider's display text rather than raw text, so hidden photo/video and quote attachment links are not printed as extra `t.co` URLs.
 
 This is an **unofficial dependency**, with its own policies, rate limits and availability. It may break or return incomplete information when X changes. This project does not log in to X, scrape protected pages, bypass CAPTCHAs or evade access restrictions. Evaluate the provider and relevant terms for your intended use. Its open-source license does not grant rights to other people’s posts.
 

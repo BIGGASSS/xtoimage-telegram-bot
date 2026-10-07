@@ -10,8 +10,9 @@ from typing import Any
 import httpx
 import pytest
 
-from xtoimage_bot.models import UserError
+from xtoimage_bot.models import RenderAssets, UserError
 from xtoimage_bot.providers import FxTwitterProvider, XApiProvider
+from xtoimage_bot.render import build_html
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -39,12 +40,48 @@ async def test_fx_live_text_fixture() -> None:
     assert post.warnings == ()
 
 
-async def test_fx_live_photo_fixture_preserves_raw_text() -> None:
-    async with client_for(fixture("fx_photo.json")) as client:
+async def test_fx_live_photo_fixture_omits_hidden_attachment_link() -> None:
+    payload = fixture("fx_photo.json")
+    async with client_for(payload) as client:
         post = await FxTwitterProvider(client).fetch("463440424141459456")
-    assert post.text.endswith("http://t.co/YuKy2rcjyU")
+    assert post.text == payload["status"]["text"]
     assert len(post.media) == 1
     assert post.media[0].kind == "photo"
+    assert "t.co/YuKy2rcjyU" not in build_html(post, RenderAssets())
+
+
+async def test_fx_media_only_post_keeps_empty_display_text() -> None:
+    payload = fixture("fx_photo.json")
+    payload["status"]["text"] = ""
+    payload["status"]["raw_text"]["text"] = "http://t.co/YuKy2rcjyU"
+    async with client_for(payload) as client:
+        post = await FxTwitterProvider(client).fetch("463440424141459456")
+    assert post.text == ""
+    assert len(post.media) == 1
+
+
+@pytest.mark.parametrize("raw_text_only", [False, True])
+async def test_fx_preserves_visible_links_and_line_breaks(raw_text_only: bool) -> None:
+    payload = fixture("fx_photo.json")
+    text = "Read https://example.com/article\n\nAlso https://t.co/authored"
+    payload["status"]["text"] = text
+    payload["status"]["raw_text"]["text"] = text + " http://t.co/YuKy2rcjyU"
+    if raw_text_only:
+        del payload["status"]["text"]
+        payload["status"]["raw_text"]["text"] = text
+    async with client_for(payload) as client:
+        post = await FxTwitterProvider(client).fetch("463440424141459456")
+    assert post.text == text
+
+
+async def test_fx_quote_also_uses_display_text() -> None:
+    payload = fixture()
+    payload["status"]["quote"] = fixture("fx_photo.json")["status"]
+    async with client_for(payload) as client:
+        post = await FxTwitterProvider(client).fetch("20")
+    assert post.quote and post.quote.text == payload["status"]["quote"]["text"]
+    assert len(post.quote.media) == 1
+    assert "t.co/YuKy2rcjyU" not in build_html(post, RenderAssets())
 
 
 async def test_fx_endpoint_is_fixed_and_authoritative_identity() -> None:
@@ -73,13 +110,18 @@ async def test_invalid_id_does_not_request(post_id: str) -> None:
                 await provider.fetch(post_id)
 
 
-@pytest.mark.parametrize("change", ["mismatch", "long_text", "long_name", "handle", "private"])
+@pytest.mark.parametrize(
+    "change", ["mismatch", "long_text", "long_raw_text", "long_name", "handle", "private"]
+)
 async def test_fx_rejects_unsafe_post(change: str) -> None:
     payload = fixture()
     status = payload["status"]
     if change == "mismatch":
         status["id"] = "21"
     elif change == "long_text":
+        status["text"] = "x" * 12_001
+    elif change == "long_raw_text":
+        del status["text"]
         status["raw_text"]["text"] = "x" * 12_001
     elif change == "long_name":
         status["author"]["name"] = "x" * 257
