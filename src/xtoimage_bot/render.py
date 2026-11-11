@@ -126,6 +126,26 @@ body { font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', 'Noto Sans', 'Arial',
 .quote .single img { max-height: 420px; }
 .quote .three .media:first-child { height: 270px; }
 .quote .unavailable, .quote .single .unavailable { height: 150px; font-size: 18px; }
+.parent { display: grid; grid-template-columns: 64px minmax(0, 1fr); column-gap: 20px;
+  margin-bottom: 8px; }
+.parent .rail { display: flex; flex-direction: column; align-items: center; }
+.parent .avatar { width: 64px; height: 64px; flex: 0 0 64px; font-size: 26px; }
+.parent .thread-line { flex: 1; width: 3px; min-height: 24px; margin-top: 8px;
+  border-radius: 2px; background: var(--line); }
+.parent .content { min-width: 0; padding-bottom: 32px; }
+.parent .identity { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
+.parent .name { font-size: 26px; }
+.parent .handle, .parent .when { font-size: 23px; margin-top: 0; color: var(--muted); }
+.parent .when::before { content: "·"; margin-right: 10px; }
+.parent .body { margin-top: 8px; font-size: 29px; line-height: 1.42; letter-spacing: 0; }
+.parent .media-grid { margin-top: 20px; gap: 3px; border-radius: 18px; }
+.parent .media { height: 260px; }
+.parent .single .media { height: auto; max-height: 460px; }
+.parent .single img { max-height: 460px; }
+.parent .three .media:first-child { height: 290px; }
+.parent .unavailable, .parent .single .unavailable { height: 160px; font-size: 18px; }
+.replying-to { margin-top: 14px; font-size: 23px; line-height: 1.35; color: var(--muted);
+  overflow-wrap: anywhere; }
 .source { margin-top: 32px; font-size: 22px; line-height: 1.5; color: var(--muted);
   overflow-wrap: anywhere; }
 .counts { display: flex; flex-wrap: wrap; gap: 14px 40px; margin-top: 22px;
@@ -194,6 +214,25 @@ def _author(post: Post, avatar: str, *, quote: bool = False) -> str:
     )
 
 
+def _parent(post: Post, avatar: str, media: tuple[str, ...]) -> str:
+    """The replied-to post, above the reply, joined to it by a conversation line."""
+    when = _timestamp(post.created_at)
+    return (
+        '<section class="parent" aria-label="Replied-to post">'
+        + '<div class="rail">'
+        + _avatar(post.author_name, avatar, post.author_handle)
+        + '<span class="thread-line" aria-hidden="true"></span></div>'
+        + '<div class="content"><div class="identity">'
+        + f'<div class="name" dir="auto">{_text(post.author_name)}</div>'
+        + f'<div class="handle">{_text(_handle(post))}</div>'
+        + (f'<div class="when">{_text(when)}</div>' if when else "")
+        + "</div>"
+        + (f'<div class="body" dir="auto">{_text(post.text)}</div>' if post.text else "")
+        + _media(post, media)
+        + "</div></section>"
+    )
+
+
 def _media(post: Post, assets: tuple[str, ...]) -> str:
     media = post.media[:4]
     if not media:
@@ -259,7 +298,7 @@ def build_html(post: Post, assets: RenderAssets, theme: Theme = "light") -> str:
     """Construct inert, standalone markup; exposed for security regression tests."""
     if theme not in ("light", "dark"):
         raise UserError("Choose the light or dark theme.")
-    for item in (post, post.quote):
+    for item in (post, post.quote, post.parent):
         if item is None:
             continue
         # Limit the total text handed to the layout engine, including metadata.
@@ -269,8 +308,20 @@ def build_html(post: Post, assets: RenderAssets, theme: Theme = "light") -> str:
         ):
             raise UserError("This post is too long to fit in an image. Please try a shorter post.")
     # Reject invalid assets even when the matching media entry is absent.
-    for asset in (assets.avatar, *assets.media, assets.quote_avatar, *assets.quote_media):
+    for asset in (
+        assets.avatar,
+        *assets.media,
+        assets.quote_avatar,
+        *assets.quote_media,
+        assets.parent_avatar,
+        *assets.parent_media,
+    ):
         _validate_asset(asset)
+    parent = ""
+    replying_to = ""
+    if post.parent is not None:
+        parent = _parent(post.parent, assets.parent_avatar, assets.parent_media)
+        replying_to = f'<div class="replying-to">Replying to {_text(_handle(post.parent))}</div>'
     quote = ""
     if post.quote is not None:
         quoted = post.quote
@@ -292,7 +343,9 @@ def build_html(post: Post, assets: RenderAssets, theme: Theme = "light") -> str:
         + '<meta name="color-scheme" content="light dark">'
         + f'<style>{_CSS}</style></head><body><main id="capture" class="{theme}">'
         + '<article class="card">'
+        + parent
         + _author(post, assets.avatar)
+        + replying_to
         + (f'<div class="body" dir="auto">{_text(post.text)}</div>' if post.text else "")
         + _media(post, assets.media)
         + quote

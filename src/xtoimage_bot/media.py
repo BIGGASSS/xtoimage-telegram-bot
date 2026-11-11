@@ -65,10 +65,19 @@ class MediaLoader:
             quote_media = tuple(
                 await asyncio.gather(*(one(m.url, attachment=True) for m in post.quote.media))
             )
+        parent_avatar = ""
+        parent_media: tuple[str, ...] = ()
+        if post.parent:
+            parent_avatar = await one(post.parent.avatar_url)
+            parent_media = tuple(
+                await asyncio.gather(*(one(m.url, attachment=True) for m in post.parent.media))
+            )
         return RenderAssets(
             avatar=avatar,
             media=media,
             quote_avatar=quote_avatar,
             quote_media=quote_media,
+            parent_avatar=parent_avatar,
+            parent_media=parent_media,
             warnings=tuple(dict.fromkeys(warnings)),
         )

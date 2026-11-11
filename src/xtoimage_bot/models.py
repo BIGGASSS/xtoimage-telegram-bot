@@ -24,6 +24,8 @@ class Post:
     avatar_url: str = ""
     media: tuple[Media, ...] = ()
     quote: "Post | None" = None
+    # The post this one replies to, shown above it. Only one level is ever fetched.
+    parent: "Post | None" = None
     likes: int | None = None
     reposts: int | None = None
     replies: int | None = None
@@ -38,6 +40,8 @@ class RenderAssets:
     media: tuple[str, ...] = ()
     quote_avatar: str = ""
     quote_media: tuple[str, ...] = ()
+    parent_avatar: str = ""
+    parent_media: tuple[str, ...] = ()
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
 

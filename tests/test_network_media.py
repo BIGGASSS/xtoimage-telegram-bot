@@ -90,3 +90,30 @@ async def test_partial_media_failure_preserves_slots():
         assets = await MediaLoader(client).load(post)
         assert assets.media[0] == "" and assets.media[1].startswith("data:image/png;")
         assert len(assets.warnings) == 1
+
+
+async def test_parent_media_loaded_into_parent_slots():
+    source = BytesIO()
+    Image.new("RGB", (10, 10), "coral").save(source, format="PNG")
+    requested = []
+
+    def handler(request):
+        requested.append(request.url.path)
+        return httpx.Response(200, content=source.getvalue())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        parent = Post(
+            "19",
+            "https://x.com/a/status/19",
+            "A",
+            "a",
+            "Parent",
+            avatar_url="https://pbs.twimg.com/parent-avatar",
+            media=(Media("https://pbs.twimg.com/parent-one"), Media("https://evil.org/x")),
+        )
+        post = Post("20", "https://x.com/jack/status/20", "Jack", "jack", "Hi", parent=parent)
+        assets = await MediaLoader(client).load(post)
+    assert assets.parent_avatar.startswith("data:image/png;")
+    assert assets.parent_media[0].startswith("data:image/png;") and assets.parent_media[1] == ""
+    assert assets.media == () and assets.quote_media == ()
+    assert "/parent-one" in requested and len(assets.warnings) == 1
