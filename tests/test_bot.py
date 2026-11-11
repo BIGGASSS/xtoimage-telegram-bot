@@ -8,7 +8,8 @@ from telegram.request import BaseRequest
 
 from xtoimage_bot.bot import Admission, BotService
 from xtoimage_bot.config import Config
-from xtoimage_bot.models import Post, RenderAssets, UserError
+from xtoimage_bot.models import Box, Frame, Media, Post, RenderAssets, UserError
+from xtoimage_bot.video import Video
 
 
 class TelegramTransport(BaseRequest):
@@ -82,9 +83,18 @@ async def make_app(**config_overrides):
     )
     media = AsyncMock()
     media.load.return_value = RenderAssets()
+    media.load_video.return_value = b"MP4-test-only"
     renderer = AsyncMock()
     renderer.render.return_value = b"PNG-test-only"
-    service = BotService(Config("test:token", **config_overrides), provider, media, renderer)
+    renderer.render_frame.return_value = Frame(
+        b"PNG", 1080, 800, Box(60, 200, 960, 540), Box(60, 200, 960, 540), b"cover"
+    )
+    composer = AsyncMock()
+    composer.available = True
+    composer.compose.return_value = Video(b"MP4-out", 1080, 800)
+    service = BotService(
+        Config("test:token", **config_overrides), provider, media, renderer, composer
+    )
     service.register(app)
     await app.initialize()
     return app, transport, service, provider, renderer
@@ -190,3 +200,69 @@ async def test_parent_warnings_are_delivered():
         assert (
             "Replied-to post: Earlier posts in this conversation are not shown." in photo["caption"]
         )
+
+
+CLIP = Media(
+    "https://pbs.twimg.com/thumb.jpg",
+    kind="video",
+    video_url="https://video.twimg.com/v.mp4",
+    duration=95.0,
+)
+
+
+async def test_video_command_sends_card_video():
+    from dataclasses import replace
+
+    app, transport, service, provider, renderer = await make_app()
+    provider.fetch.return_value = replace(
+        provider.fetch.return_value,
+        media=(CLIP,),
+        quote=Post("21", "https://x.com/a/status/21", "A", "a", "Q", media=(CLIP,)),
+        warnings=("Videos and animated GIFs are shown as still previews.",),
+    )
+    async with app:
+        await app.process_update(update(app, "/video https://x.com/jack/status/20"))
+        assert renderer.render_frame.call_args.args[3] == ("post", 0)
+        service.media.load_video.assert_awaited_once_with("https://video.twimg.com/v.mp4")
+        assert service.composer.compose.call_args.kwargs == {"audio": True}
+        video = next(p for name, p in transport.calls if name == "sendVideo")
+        assert video["supports_streaming"] is True
+        assert (video["width"], video["height"]) == (1080, 800)
+        assert "first 60 seconds" in video["caption"]
+        assert "Only one video or GIF plays" in video["caption"]
+        assert "still previews." not in video["caption"].split("plays;")[0]
+        assert not any(name == "sendPhoto" for name, _ in transport.calls)
+        actions = [p["action"] for name, p in transport.calls if name == "sendChatAction"]
+        assert actions == ["upload_video"]
+        assert not service.admission.active
+
+
+async def test_video_command_sends_gif_as_silent_animation():
+    from dataclasses import replace
+
+    app, transport, service, provider, _ = await make_app()
+    gif = replace(CLIP, animated=True, duration=None)
+    provider.fetch.return_value = replace(provider.fetch.return_value, media=(gif,))
+    async with app:
+        await app.process_update(update(app, "/video https://x.com/jack/status/20"))
+        assert service.composer.compose.call_args.kwargs == {"audio": False}
+        animation = next(p for name, p in transport.calls if name == "sendAnimation")
+        assert "seconds" not in animation["caption"]
+
+
+async def test_video_command_without_video_explains():
+    app, transport, service, _, renderer = await make_app()
+    async with app:
+        await app.process_update(update(app, "/video https://x.com/jack/status/20"))
+        renderer.render_frame.assert_not_awaited()
+        assert any("has no video or GIF" in p.get("text", "") for _, p in transport.calls)
+        assert not service.admission.active
+
+
+async def test_video_command_without_ffmpeg_never_fetches():
+    app, transport, service, provider, _ = await make_app()
+    service.composer.available = False
+    async with app:
+        await app.process_update(update(app, "/video https://x.com/jack/status/20"))
+        provider.fetch.assert_not_awaited()
+        assert any("isn’t set up" in p.get("text", "") for _, p in transport.calls)

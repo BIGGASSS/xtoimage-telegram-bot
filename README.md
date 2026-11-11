@@ -22,12 +22,13 @@ This project was inspired by the **link → image** flow on xtoimage.com, but it
 - Shows up to four photos or video thumbnails and one quoted post
 - For replies, shows the replied-to post above the reply with a connecting line and a "Replying to @handle" label
 - Has light and dark themes, plus a full-quality PNG download with `/file`
+- With `/video`, plays a post's video or GIF inside the card, with sound for videos
 - Uses Noto fonts in the Docker image, so emoji, CJK and RTL scripts render correctly
 - Gives clear error messages for deleted or protected posts, provider failures, oversized posts and rate limits
 - Supports an optional allowlist of user IDs and only answers private chats by default
 - Has no database and keeps no image history
 
-**What it doesn't do:** Videos appear as still thumbnails. Threads longer than the direct parent, polls, articles, link cards and nested quotes aren't fully reproduced, and the caption says when something is left out. Posts over 12,000 characters or taller than 6,000 px are rejected rather than cropped. The images are fixed snapshots and won't change if the post is edited or deleted.
+**What it doesn't do:** Videos appear as still thumbnails, except with `/video`, which plays one clip (up to 60 seconds). Threads longer than the direct parent, polls, articles, link cards and nested quotes aren't fully reproduced, and the caption says when something is left out. Posts over 12,000 characters or taller than 6,000 px are rejected rather than cropped. The images are fixed snapshots and won't change if the post is edited or deleted.
 
 ## Quick start (Docker)
 
@@ -53,12 +54,24 @@ The bot uses long polling, so it needs no webhook, open port or domain. It does 
 | --- | --- |
 | a post URL, or `/image <URL>` | Sends the card as a photo |
 | `/file <URL>` | Sends the original PNG as a file (Telegram compresses photos) |
+| `/video <URL>` | For a post with a video or GIF, sends the card as a video with the clip playing in place of its thumbnail |
 | `/theme light` / `/theme dark` | Sets your theme until the bot restarts |
 | `/id` | Shows your numeric Telegram user ID |
 | `/privacy` | Explains how links and images are handled |
 | `/help`, `/start` | Shows usage and limits |
 
 Each result includes a button that opens the original post on X.
+
+### `/video`
+
+`/video` renders the same card as `/image`, then plays the clip where its thumbnail would be. The card's rounded corners and layout stay the same.
+
+- It uses the first video or GIF in the post. If the post has none, it uses one from the quoted post, then the replied-to post. Any other videos stay as still thumbnails.
+- Videos keep their sound. GIFs are sent as Telegram animations, so they loop and have no sound.
+- Clips longer than 60 seconds are cut to the first 60 seconds, and the caption says so.
+- Cards taller than 1920 px are scaled down to that height for the video.
+- The bot downloads one MP4 of up to 40 MB from `video.twimg.com`, picking the best one at 2.5 Mbit/s or less (usually 720p) when there's a choice.
+- It needs `ffmpeg`. The Docker image includes it. For native installs, install it (`apt install ffmpeg`) or set `FFMPEG_EXECUTABLE_PATH`. Without it, `/video` replies that video isn't set up, and everything else still works.
 
 ## Post providers
 
@@ -95,10 +108,11 @@ All settings come from environment variables. See [`.env.example`](.env.example)
 | `MAX_CONCURRENCY` | `2` | Renderer job limit (1–4). Polling stays sequential, so raising this doesn't increase throughput. |
 | `USER_COOLDOWN_SECONDS` | `10` | Minimum wait between one user's requests |
 | `CHROMIUM_EXECUTABLE_PATH` | — | Uses a system Chromium (native installs only) |
+| `FFMPEG_EXECUTABLE_PATH` | `ffmpeg` on `PATH` | The ffmpeg used by `/video` (native installs only) |
 
 The `_FILE` variants read a secret from a mounted file. For Docker, add a read-only mount in Compose. Never build secrets into the image or commit `.env`.
 
-**Built-in limits:** The bot handles one update at a time, with up to 32 updates queued. A conversion times out after 90 seconds and a network request after 20 seconds. Provider responses are capped at 2 MB, and source images at 8 MB and 16 megapixels.
+**Built-in limits:** The bot handles one update at a time, with up to 32 updates queued. A conversion times out after 90 seconds (240 seconds for `/video`) and a network request after 20 seconds (60 seconds for a video download). Provider responses are capped at 2 MB, and source images at 8 MB and 16 megapixels.
 
 ## Running without Docker
 
@@ -111,16 +125,17 @@ export TELEGRAM_BOT_TOKEN=...   # the Python entrypoint does not read .env
 uv run xtoimage-bot
 ```
 
-Install `fonts-noto-color-emoji` and `fonts-noto-cjk` (Debian/Ubuntu) for emoji and CJK text. Run the bot under its own unprivileged user. The API client respects `HTTPS_PROXY` and `ALL_PROXY`.
+Install `fonts-noto-color-emoji` and `fonts-noto-cjk` (Debian/Ubuntu) for emoji and CJK text, and `ffmpeg` for `/video`. Run the bot under its own unprivileged user. The API client respects `HTTPS_PROXY` and `ALL_PROXY`.
 
 ## Security and privacy
 
-- **Links are never opened.** The bot reads the post ID from the URL and only contacts the provider API and `pbs.twimg.com`. It doesn't follow redirects or fetch images from other hosts.
+- **Links are never opened.** The bot reads the post ID from the URL and only contacts the provider API and `pbs.twimg.com`, plus `video.twimg.com` for `/video`. It doesn't follow redirects or fetch media from other hosts.
+- **Videos are handled narrowly.** For `/video`, only plain MP4 files are accepted, never streaming playlists. ffmpeg is told the file is an MP4, so it doesn't guess the format, and it may only read local files. It runs one job at a time with a time limit, and its output is never logged.
 - **Images are cleaned before use.** Each one is decoded, size-checked and re-encoded as PNG, which removes its metadata.
 - **The renderer is isolated.** Post text is HTML-escaped, and JavaScript, network access and service workers are turned off in the browser. Only checked inline PNGs are drawn.
 - **The container is locked down.** It runs as an unprivileged user with a read-only filesystem and no extra capabilities, and `/tmp` is temporary memory storage. Don't rely on Chromium's sandbox as a security boundary, and keep the image updated.
-- **No post or image archive is kept.** Cooldowns and theme choices stay in memory, with a size limit. Chromium may write temporary profile and cache files under `/tmp`, which are removed when the browser closes. The Compose setup keeps `/tmp` in memory, but a native install writes these files to disk. Logs don't include tokens, URLs, message text or raw exceptions.
-- **Some data does leave the bot.** The post ID goes to the chosen provider, and the finished image goes to Telegram and the people in the chat.
+- **No post or image archive is kept.** Cooldowns and theme choices stay in memory, with a size limit. Chromium may write temporary profile and cache files under `/tmp`, which are removed when the browser closes. `/video` writes the card, the clip and the result to a temporary folder under `/tmp` and deletes it as soon as the video is made. The Compose setup keeps `/tmp` in memory, but a native install writes these files to disk. Logs don't include tokens, URLs, message text or raw exceptions.
+- **Some data does leave the bot.** The post ID goes to the chosen provider, and the finished image or video goes to Telegram and the people in the chat.
 
 Only share content you have the right to use, and keep the attribution. See X's [display requirements](https://docs.x.com/developer-terms/display-requirements), [developer guidelines](https://docs.x.com/developer-guidelines) and [terms](https://x.com/en/tos). Because an image doesn't update after a post is edited or deleted, the person running the bot is responsible for handling removal requests.
 
@@ -141,9 +156,10 @@ The tests cover:
 - Missing quotes and missing parent posts
 - HTML escaping
 - Rendering in a real Chromium browser
+- Making `/video` clips with a real ffmpeg, including keeping the card's rounded corners
 - The full python-telegram-bot pipeline against a fake Telegram server
 
-The tests don't need credentials or make any live X or Telegram requests. The browser tests need Chromium. CI also builds the Docker image, runs a smoke test on it, and uploads the demo renders as a build artifact.
+The tests don't need credentials or make any live X or Telegram requests. The browser tests need Chromium, and the video tests need ffmpeg; each is skipped if it's missing. CI also builds the Docker image, runs a smoke test on it, and uploads the demo renders as a build artifact.
 
 ### Project layout
 
@@ -153,6 +169,7 @@ The tests don't need credentials or make any live X or Telegram requests. The br
 | `src/xtoimage_bot/providers.py` | FxEmbed and X API adapters, including parent-post lookup |
 | `src/xtoimage_bot/urls.py`, `network.py`, `media.py` | URL parsing, network requests and image checks |
 | `src/xtoimage_bot/render.py` | Card HTML and the Chromium screenshot step |
+| `src/xtoimage_bot/video.py` | `/video`: picking the clip and combining it with the card using ffmpeg |
 | `scripts/render_demo.py` | Renders the demo cards from offline fixtures |
 | `tests/` | Offline fixtures and integration tests |
 | `Dockerfile`, `compose.yaml` | Self-hosting setup |

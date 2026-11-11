@@ -11,6 +11,10 @@ class Media:
     url: str
     kind: Literal["photo", "video"] = "photo"
     alt_text: str = ""
+    # For videos and GIFs: an allowlisted MP4 used by /video. Empty when none is usable.
+    video_url: str = ""
+    animated: bool = False
+    duration: float | None = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +47,31 @@ class RenderAssets:
     parent_avatar: str = ""
     parent_media: tuple[str, ...] = ()
     warnings: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class Box:
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+@dataclass(frozen=True)
+class Frame:
+    """A rendered card plus where the playing video goes, in card pixels.
+
+    `slot` is the box the clip is fitted into. `cover` is an RGBA PNG of the card at
+    `region`, transparent exactly where the slot is visible: laid over the clip, it
+    keeps the card's rounded corners and anti-aliased edges.
+    """
+
+    png: bytes
+    width: int
+    height: int
+    slot: Box
+    region: Box
+    cover: bytes
 
 
 class UserError(Exception):

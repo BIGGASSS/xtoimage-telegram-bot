@@ -11,6 +11,7 @@ from .models import UserError
 
 API_HOSTS = frozenset({"api.fxtwitter.com", "api.x.com"})
 MEDIA_HOSTS = frozenset({"pbs.twimg.com"})
+VIDEO_HOSTS = frozenset({"video.twimg.com"})
 
 
 def validate_remote_url(url: str, hosts: frozenset[str]) -> None:
@@ -52,10 +53,11 @@ async def fetch_bytes(
     limit: int,
     headers: dict[str, str] | None = None,
     params: dict[str, str] | None = None,
+    time_limit: float = 20,
 ) -> bytes:
     validate_remote_url(url, hosts)
     try:
-        async with asyncio.timeout(20):
+        async with asyncio.timeout(time_limit):
             async with client.stream(
                 "GET", url, headers=headers, params=params, follow_redirects=False, timeout=12
             ) as response:

@@ -8,10 +8,13 @@ import httpx
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .models import Post, RenderAssets, UserError
-from .network import MEDIA_HOSTS, fetch_bytes
+from .network import MEDIA_HOSTS, VIDEO_HOSTS, fetch_bytes
 
 MAX_PIXELS = 16_000_000
 MAX_BYTES = 8_000_000
+MAX_VIDEO_BYTES = 40_000_000
+_VIDEO_FAILED = "The video could not be downloaded. Please try again later."
+_VIDEO_TOO_LARGE = "This video is too large to download. Try /image instead."
 
 
 def sanitize_image(raw: bytes) -> str:
@@ -38,6 +41,20 @@ class MediaLoader:
     def __init__(self, client: httpx.AsyncClient) -> None:
         self.client = client
         self._slots = asyncio.Semaphore(4)
+
+    async def load_video(self, url: str) -> bytes:
+        """Download one MP4 for /video. ffmpeg decodes it later with its MP4 demuxer only."""
+        try:
+            raw = await fetch_bytes(
+                self.client, url, hosts=VIDEO_HOSTS, limit=MAX_VIDEO_BYTES, time_limit=60
+            )
+        except UserError as error:
+            large = "too large" in str(error)
+            raise UserError(_VIDEO_TOO_LARGE if large else _VIDEO_FAILED) from None
+        # Every MP4 starts with an `ftyp` box.
+        if len(raw) < 12 or raw[4:8] != b"ftyp":
+            raise UserError(_VIDEO_FAILED)
+        return raw
 
     async def load(self, post: Post) -> RenderAssets:
         warnings: list[str] = []

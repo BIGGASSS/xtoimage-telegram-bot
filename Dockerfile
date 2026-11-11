@@ -11,7 +11,7 @@ COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --locked --no-dev --no-install-project \
     && .venv/bin/playwright install --with-deps chromium \
     && apt-get update && apt-get install -y --no-install-recommends \
-       fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji \
+       fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji ffmpeg \
     && rm -rf /var/lib/apt/lists/* /root/.cache
 COPY src ./src
 RUN uv sync --locked --no-dev \

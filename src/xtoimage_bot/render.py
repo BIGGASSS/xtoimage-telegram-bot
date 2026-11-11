@@ -16,11 +16,21 @@ import struct
 from contextlib import suppress
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from io import BytesIO
+from typing import Literal
 
-from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright
+from PIL import Image, ImageChops
+from playwright.async_api import (
+    Browser,
+    BrowserContext,
+    FloatRect,
+    Locator,
+    Playwright,
+    async_playwright,
+)
 from playwright.async_api import Error as PlaywrightError
 
-from .models import Post, RenderAssets, Theme, UserError
+from .models import Box, Frame, Post, RenderAssets, Theme, UserError
 
 WIDTH = 1080
 MAX_HEIGHT = 6000
@@ -31,6 +41,10 @@ RENDER_TIMEOUT_SECONDS = 35
 _PNG_PREFIX = "data:image/png;base64,"
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _PLACEHOLDER_TONES = 6
+
+# Where /video plays its clip: which post on the card, and which of its media items.
+LiveSection = Literal["post", "quote", "parent"]
+LiveSlot = tuple[LiveSection, int]
 
 # Static, trusted inline icons (Material Symbols-style paths). Never built from post data.
 _ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.14v13.72L19 12z"/></svg>'
@@ -104,6 +118,12 @@ body { font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', 'Noto Sans', 'Arial',
   padding: 7px 16px 7px 12px; color: #fff; background: rgba(0, 0, 0, .72);
   font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: .2px; }
 .video-label svg { width: 18px; height: 18px; fill: currentColor; }
+/* An id selector, so section and .single heights never collapse the empty slot. */
+#live.live-empty { height: 540px; max-height: none; background: #000; }
+.quote #live.live-empty { height: 300px; }
+.parent #live.live-empty { height: 320px; }
+.fill-black #live { filter: brightness(0); }
+.fill-white #live { filter: brightness(0) invert(1); }
 .play { position: absolute; top: 50%; left: 50%; width: 88px; height: 88px;
   margin: -44px 0 0 -44px; border-radius: 50%; background: rgba(15, 20, 25, .72);
   border: 3px solid rgba(255, 255, 255, .9); display: flex; align-items: center;
@@ -214,7 +234,7 @@ def _author(post: Post, avatar: str, *, quote: bool = False) -> str:
     )
 
 
-def _parent(post: Post, avatar: str, media: tuple[str, ...]) -> str:
+def _parent(post: Post, avatar: str, media: tuple[str, ...], live: int | None = None) -> str:
     """The replied-to post, above the reply, joined to it by a conversation line."""
     when = _timestamp(post.created_at)
     return (
@@ -228,12 +248,13 @@ def _parent(post: Post, avatar: str, media: tuple[str, ...]) -> str:
         + (f'<div class="when">{_text(when)}</div>' if when else "")
         + "</div>"
         + (f'<div class="body" dir="auto">{_text(post.text)}</div>' if post.text else "")
-        + _media(post, media)
+        + _media(post, media, live)
         + "</div></section>"
     )
 
 
-def _media(post: Post, assets: tuple[str, ...]) -> str:
+def _media(post: Post, assets: tuple[str, ...], live: int | None = None) -> str:
+    """Media grid. The `live` item is where /video overlays the clip: no play badge."""
     media = post.media[:4]
     if not media:
         return ""
@@ -241,6 +262,11 @@ def _media(post: Post, assets: tuple[str, ...]) -> str:
     output = [f'<div class="media-grid {count_class}">']
     for index, item in enumerate(media):
         asset = _validate_asset(assets[index]) if index < len(assets) else ""
+        if index == live:
+            image = f'<img src="{asset}" alt="">' if asset else ""
+            empty = "" if asset else " live-empty"
+            output.append(f'<figure class="media{empty}" id="live">{image}</figure>')
+            continue
         if not asset:
             label = "Video thumbnail unavailable" if item.kind == "video" else "Image unavailable"
             output.append(f'<figure class="media unavailable">{label}</figure>')
@@ -294,10 +320,19 @@ def _counts(post: Post) -> str:
     return f'<div class="counts">{"".join(counts)}</div>' if counts else ""
 
 
-def build_html(post: Post, assets: RenderAssets, theme: Theme = "light") -> str:
+def build_html(
+    post: Post,
+    assets: RenderAssets,
+    theme: Theme = "light",
+    live: LiveSlot | None = None,
+    fill: Literal["", "black", "white"] = "",
+) -> str:
     """Construct inert, standalone markup; exposed for security regression tests."""
     if theme not in ("light", "dark"):
         raise UserError("Choose the light or dark theme.")
+    section, index = live if live is not None else ("post", -1)
+    # Mask passes for /video paint the live slot one flat colour; see Renderer.render_frame.
+    capture_class = f"{theme} fill-{fill}" if fill in ("black", "white") else theme
     for item in (post, post.quote, post.parent):
         if item is None:
             continue
@@ -320,7 +355,12 @@ def build_html(post: Post, assets: RenderAssets, theme: Theme = "light") -> str:
     parent = ""
     replying_to = ""
     if post.parent is not None:
-        parent = _parent(post.parent, assets.parent_avatar, assets.parent_media)
+        parent = _parent(
+            post.parent,
+            assets.parent_avatar,
+            assets.parent_media,
+            index if section == "parent" else None,
+        )
         replying_to = f'<div class="replying-to">Replying to {_text(_handle(post.parent))}</div>'
     quote = ""
     if post.quote is not None:
@@ -329,7 +369,7 @@ def build_html(post: Post, assets: RenderAssets, theme: Theme = "light") -> str:
             '<section class="quote" aria-label="Quoted post">'
             + _author(quoted, assets.quote_avatar, quote=True)
             + (f'<div class="body" dir="auto">{_text(quoted.text)}</div>' if quoted.text else "")
-            + _media(quoted, assets.quote_media)
+            + _media(quoted, assets.quote_media, index if section == "quote" else None)
             + "</section>"
         )
     csp = (
@@ -341,13 +381,13 @@ def build_html(post: Post, assets: RenderAssets, theme: Theme = "light") -> str:
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         + f'<meta http-equiv="Content-Security-Policy" content="{csp}">'
         + '<meta name="color-scheme" content="light dark">'
-        + f'<style>{_CSS}</style></head><body><main id="capture" class="{theme}">'
+        + f'<style>{_CSS}</style></head><body><main id="capture" class="{capture_class}">'
         + '<article class="card">'
         + parent
         + _author(post, assets.avatar)
         + replying_to
         + (f'<div class="body" dir="auto">{_text(post.text)}</div>' if post.text else "")
-        + _media(post, assets.media)
+        + _media(post, assets.media, index if section == "post" else None)
         + quote
         + _source(post)
         + _counts(post)
@@ -403,7 +443,32 @@ class Renderer:
                 ) from exc
 
     async def render(self, post: Post, assets: RenderAssets, theme: Theme = "light") -> bytes:
-        document = build_html(post, assets, theme)
+        shots, _ = await self._capture((build_html(post, assets, theme),), theme)
+        return shots[0]
+
+    async def render_frame(
+        self, post: Post, assets: RenderAssets, theme: Theme, live: LiveSlot
+    ) -> Frame:
+        """The card for /video, the box the clip plays in, and a cover for the clip.
+
+        Two extra passes paint the slot black, then white: their difference is exactly
+        what the viewer sees of the slot, which becomes the cover's transparent hole.
+        """
+        documents = (
+            build_html(post, assets, theme, live),
+            build_html(post, assets, theme, live, "black"),
+            build_html(post, assets, theme, live, "white"),
+        )
+        (png, black, white), slot = await self._capture(documents, theme, measure=True)
+        assert slot is not None
+        region, cover = await asyncio.to_thread(_slot_cover, png, black, white)
+        width, height = struct.unpack(">II", png[16:24])
+        return Frame(png=png, width=width, height=height, slot=slot, region=region, cover=cover)
+
+    async def _capture(
+        self, documents: tuple[str, ...], theme: Theme, *, measure: bool = False
+    ) -> tuple[list[bytes], Box | None]:
+        """Screenshot each document in one offline page; optionally measure #live in the first."""
         async with self._slots:
             await self.start()
             context: BrowserContext | None = None
@@ -424,18 +489,29 @@ class Renderer:
                     await context.route("**/*", lambda route: route.abort())
                     page = await context.new_page()
                     page.set_default_timeout(10000)
-                    await page.set_content(document, wait_until="load", timeout=10000)
-                    capture = page.locator("#capture")
-                    bounds = await capture.bounding_box()
-                    if bounds is None or not math.isfinite(bounds["height"]):
-                        raise UserError("This post could not be rendered. Please try another post.")
-                    if math.ceil(bounds["height"]) > MAX_HEIGHT:
-                        raise UserError(
-                            "This post is too tall to fit in an image. Please try a shorter post."
+                    shots: list[bytes] = []
+                    slot: Box | None = None
+                    for document in documents:
+                        await page.set_content(document, wait_until="load", timeout=10000)
+                        capture = page.locator("#capture")
+                        bounds = await capture.bounding_box()
+                        if bounds is None or not math.isfinite(bounds["height"]):
+                            raise UserError(
+                                "This post could not be rendered. Please try another post."
+                            )
+                        if math.ceil(bounds["height"]) > MAX_HEIGHT:
+                            raise UserError(
+                                "This post is too tall to fit in an image. "
+                                "Please try a shorter post."
+                            )
+                        if measure and slot is None:
+                            slot = await self._measure(page.locator("#live"), bounds)
+                        shots.append(
+                            await capture.screenshot(
+                                type="png", animations="disabled", timeout=15000
+                            )
                         )
-                    return await capture.screenshot(
-                        type="png", animations="disabled", timeout=15000
-                    )
+                    return shots, slot
             except (PlaywrightError, TimeoutError) as exc:
                 raise UserError("This post could not be rendered. Please try again later.") from exc
             finally:
@@ -443,6 +519,28 @@ class Renderer:
                     with suppress(Exception):
                         async with asyncio.timeout(5):
                             await context.close()
+
+    @staticmethod
+    async def _measure(live: Locator, card: FloatRect) -> Box:
+        """The clip's box on the card. The thumbnail <img> has the clip's aspect ratio."""
+        image = live.locator("img")
+        box = await (image if await image.count() else live).bounding_box()
+        if box is None or not all(
+            map(math.isfinite, (box["x"], box["y"], box["width"], box["height"]))
+        ):
+            raise UserError("This post could not be rendered. Please try another post.")
+        width, height = round(card["width"]), round(card["height"])
+        left = max(0, round(box["x"] - card["x"]))
+        top = max(0, round(box["y"] - card["y"]))
+        slot = Box(
+            x=left,
+            y=top,
+            width=min(round(box["width"]), width - left),
+            height=min(round(box["height"]), height - top),
+        )
+        if slot.width < 16 or slot.height < 16:
+            raise UserError("This post could not be rendered. Please try another post.")
+        return slot
 
     async def close(self) -> None:
         # Serialize simultaneous shutdown requests so two callers cannot each
@@ -471,3 +569,24 @@ class Renderer:
             finally:
                 for _ in range(acquired):
                     self._slots.release()
+
+
+def _slot_cover(card: bytes, black: bytes, white: bytes) -> tuple[Box, bytes]:
+    """The card around the visible slot, with the slot itself transparent."""
+    with (
+        Image.open(BytesIO(card)) as base,
+        Image.open(BytesIO(black)) as dark,
+        Image.open(BytesIO(white)) as light,
+    ):
+        if not base.size == dark.size == light.size:
+            raise UserError("This post could not be rendered. Please try again later.")
+        visible = ImageChops.difference(dark.convert("L"), light.convert("L"))
+        bounds = visible.getbbox()
+        if bounds is None:
+            raise UserError("This post could not be rendered. Please try again later.")
+        cover = base.convert("RGB").crop(bounds)
+    cover.putalpha(ImageChops.invert(visible.crop(bounds)))
+    output = BytesIO()
+    cover.save(output, format="PNG")
+    left, top, right, bottom = bounds
+    return Box(left, top, right - left, bottom - top), output.getvalue()

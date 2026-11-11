@@ -12,6 +12,7 @@ from .config import Config
 from .media import MediaLoader
 from .providers import FxTwitterProvider, XApiProvider
 from .render import Renderer
+from .video import VideoComposer
 
 
 def configure_logging() -> None:
@@ -43,7 +44,8 @@ def main() -> None:
         if config.provider == "x_api"
         else FxTwitterProvider(client)
     )
-    service = BotService(config, provider, MediaLoader(client), renderer)
+    composer = VideoComposer(config.ffmpeg_executable_path)
+    service = BotService(config, provider, MediaLoader(client), renderer, composer)
 
     async def startup(app: Application) -> None:  # type: ignore[type-arg]
         webhook = await app.bot.get_webhook_info()
@@ -53,7 +55,9 @@ def main() -> None:
             )
         await renderer.start()
         await app.bot.set_my_commands(COMMANDS)
-        logging.getLogger(__name__).info("bot_started provider=%s", config.provider)
+        logging.getLogger(__name__).info(
+            "bot_started provider=%s video=%s", config.provider, composer.available
+        )
 
     async def shutdown(app: Application) -> None:  # type: ignore[type-arg]
         await renderer.close()

@@ -10,10 +10,13 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from .media import MAX_VIDEO_BYTES
 from .models import Media, Post, UserError
 from .network import fetch_json
 
 MAX_TEXT = 12_000
+# Source videos for /video: the card slot is at most ~960 px wide, so 720p is plenty.
+MAX_VIDEO_BITRATE = 2_500_000
 _ID = re.compile(r"[1-9][0-9]{0,19}\Z", re.ASCII)
 _HANDLE = re.compile(r"[A-Za-z0-9_]{1,15}\Z", re.ASCII)
 _MALFORMED = "The post service returned an incomplete or invalid response. Please try again later."
@@ -25,6 +28,7 @@ _NESTED_QUOTE = "A further nested quoted post is not shown."
 _CONVERSATION = "This is a single-post image; the surrounding conversation is not shown."
 _EARLIER = "Earlier posts in this conversation are not shown."
 _PARENT_QUOTE = "Its quoted post is not shown."
+STILL_PREVIEWS = "Videos and animated GIFs are shown as still previews."
 
 
 def _mapping(value: object) -> dict[str, object]:
@@ -93,6 +97,79 @@ def _image_url(value: object) -> str:
     return url
 
 
+def _video_url(value: object) -> str:
+    """Only plain MP4 files on X's video CDN; never HLS playlists or other hosts."""
+    if not isinstance(value, str) or len(value) > 2048:
+        return ""
+    try:
+        parsed = urlsplit(value)
+        valid = (
+            parsed.scheme == "https"
+            and parsed.hostname == "video.twimg.com"
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.port is None
+            and not parsed.fragment
+            and parsed.path.lower().endswith(".mp4")
+            and "\\" not in value
+            and not any(ord(char) < 33 for char in value)
+        )
+    except ValueError:
+        valid = False
+    return value if valid else ""
+
+
+def _loose_list(value: object) -> list[object]:
+    """Optional video metadata: a bad shape means "no MP4", never a failed post."""
+    return cast(list[object], value)[:64] if isinstance(value, list) else []
+
+
+def _bitrate(value: object) -> int:
+    return value if type(value) is int and 0 <= value <= 10**9 else 0
+
+
+def _video_source(item: Mapping[str, object], *, official: bool) -> tuple[str, float | None]:
+    """Pick an MP4 small enough to download: the best one under the bitrate/size budget."""
+    raw_duration = item.get("duration_ms") if official else item.get("duration")
+    duration: float | None = None
+    if type(raw_duration) in (int, float) and 0 < cast(float, raw_duration) < 10**8:
+        duration = float(cast(float, raw_duration)) / (1000 if official else 1)
+    candidates: list[tuple[int, str]] = []
+    for raw in _loose_list(item.get("formats")):
+        if not isinstance(raw, dict):
+            continue
+        entry = cast(dict[str, object], raw)
+        if entry.get("container") not in (None, "mp4") or entry.get("codec") not in (
+            None,
+            "h264",
+        ):
+            continue
+        if url := _video_url(entry.get("url")):
+            candidates.append((_bitrate(entry.get("bitrate")), url))
+    for raw in _loose_list(item.get("variants")):
+        if not isinstance(raw, dict):
+            continue
+        entry = cast(dict[str, object], raw)
+        if entry.get("content_type") != "video/mp4":
+            continue
+        if url := _video_url(entry.get("url")):
+            rate = entry.get("bit_rate") if official else entry.get("bitrate")
+            candidates.append((_bitrate(rate), url))
+    if not candidates and not official and (url := _video_url(item.get("url"))):
+        candidates.append((0, url))
+    if not candidates:
+        return "", duration
+
+    def fits(rate: int) -> bool:
+        if rate > MAX_VIDEO_BITRATE:
+            return False
+        return duration is None or rate * duration / 8 <= MAX_VIDEO_BYTES
+
+    fitting = [candidate for candidate in candidates if fits(candidate[0])]
+    best = max(fitting) if fitting else min(candidates)
+    return best[1], duration
+
+
 def _identity(post: Mapping[str, object], author: Mapping[str, object]) -> tuple[str, str, str]:
     post_id = _post_id(post.get("id"))
     protected = author.get("protected", False)
@@ -126,11 +203,23 @@ def _media(
         elif kind in ("video", "gif", "animated_gif"):
             key = "preview_image_url" if official else "thumbnail_url"
             url = _image_url(item.get(key))
-            if url:
-                result.append(Media(url=url, kind="video", alt_text=alt))
-                warnings.append("Videos and animated GIFs are shown as still previews.")
-            else:
+            video_url, duration = _video_source(item, official=official)
+            if not url:
                 warnings.append("A video attachment has no usable still preview.")
+            # A playable clip is kept without a preview: /image shows a placeholder,
+            # and /video still plays it in an empty slot.
+            if url or video_url:
+                result.append(
+                    Media(
+                        url=url,
+                        kind="video",
+                        alt_text=alt,
+                        video_url=video_url,
+                        animated=kind != "video",
+                        duration=duration,
+                    )
+                )
+                warnings.append(STILL_PREVIEWS)
         else:
             warnings.append("An unsupported media attachment is not shown.")
     return tuple(result)
@@ -400,7 +489,7 @@ class XApiProvider:
             # in_reply_to_user_id expands the replied-to author so the parent can be shown.
             "expansions": "author_id,attachments.media_keys,referenced_posts,in_reply_to_user_id",
             "user.fields": "name,username,profile_image_url,protected",
-            "media.fields": "type,url,preview_image_url,alt_text",
+            "media.fields": "type,url,preview_image_url,alt_text,variants,duration_ms",
         }
         data = _mapping(
             await fetch_json(

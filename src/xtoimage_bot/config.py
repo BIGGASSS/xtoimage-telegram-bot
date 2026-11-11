@@ -41,6 +41,7 @@ class Config:
     max_concurrency: int = 2
     user_cooldown_seconds: int = 10
     chromium_executable_path: str | None = None
+    ffmpeg_executable_path: str | None = None
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "Config":
@@ -82,4 +83,5 @@ class Config:
             max_concurrency=_integer(env, "MAX_CONCURRENCY", 2, 1, 4),
             user_cooldown_seconds=_integer(env, "USER_COOLDOWN_SECONDS", 10, 1, 3600),
             chromium_executable_path=env.get("CHROMIUM_EXECUTABLE_PATH") or None,
+            ffmpeg_executable_path=env.get("FFMPEG_EXECUTABLE_PATH") or None,
         )
