@@ -119,7 +119,7 @@ Install `fonts-noto-color-emoji` and `fonts-noto-cjk` (Debian/Ubuntu) for emoji 
 - **Images are cleaned before use.** Each one is decoded, size-checked and re-encoded as PNG, which removes its metadata.
 - **The renderer is isolated.** Post text is HTML-escaped, and JavaScript, network access and service workers are turned off in the browser. Only checked inline PNGs are drawn.
 - **The container is locked down.** It runs as an unprivileged user with a read-only filesystem and no extra capabilities, and `/tmp` is temporary memory storage. Don't rely on Chromium's sandbox as a security boundary, and keep the image updated.
-- **Nothing is saved to disk.** Cooldowns and theme choices stay in memory, with a size limit. Logs don't include tokens, URLs, message text or raw exceptions.
+- **No post or image archive is kept.** Cooldowns and theme choices stay in memory, with a size limit. Chromium may write temporary profile and cache files under `/tmp`, which are removed when the browser closes. The Compose setup keeps `/tmp` in memory, but a native install writes these files to disk. Logs don't include tokens, URLs, message text or raw exceptions.
 - **Some data does leave the bot.** The post ID goes to the chosen provider, and the finished image goes to Telegram and the people in the chat.
 
 Only share content you have the right to use, and keep the attribution. See X's [display requirements](https://docs.x.com/developer-terms/display-requirements), [developer guidelines](https://docs.x.com/developer-guidelines) and [terms](https://x.com/en/tos). Because an image doesn't update after a post is edited or deleted, the person running the bot is responsible for handling removal requests.
