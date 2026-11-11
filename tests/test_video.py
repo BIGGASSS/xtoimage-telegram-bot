@@ -353,3 +353,41 @@ async def test_end_to_end_card_video(renderer: Renderer, tmp_path: Path) -> None
     slot = frame.slot
     red, green, _blue = still.getpixel((slot.x + slot.width // 2, slot.y + slot.height // 2))
     assert red > 200 and green < 60
+
+
+async def test_fx_playable_video_without_preview_reaches_video_command() -> None:
+    from test_bot import make_app, update
+
+    post = await fx_post(fx_video(thumbnail_url=None))
+    assert post.media[0].url == ""
+    assert post.media[0].video_url == f"{CDN}/b/mid.mp4"
+    assert any("no usable still preview" in warning for warning in post.warnings)
+    # Without a preview or an MP4 the attachment is still dropped.
+    assert (await fx_post(fx_video(thumbnail_url=None, formats=[], url=None))).media == ()
+
+    app, transport, service, provider, mock_renderer = await make_app()
+    provider.fetch.return_value = post
+    async with app:
+        await app.process_update(update(app, "/video https://x.com/jack/status/20"))
+        service.media.load_video.assert_awaited_once_with(f"{CDN}/b/mid.mp4")
+        assert mock_renderer.render_frame.call_args.args[3] == ("post", 0)
+        assert any(name == "sendVideo" for name, _ in transport.calls)
+
+
+async def test_x_api_playable_video_without_preview_reaches_video_command() -> None:
+    from test_bot import make_app, update
+
+    payload = x_payload()
+    media = payload["includes"]["media"][0]
+    del media["preview_image_url"]
+    media["variants"] = [{"content_type": "video/mp4", "bit_rate": 832000, "url": f"{CDN}/a.mp4"}]
+    async with client_for(payload) as client:
+        post = await XApiProvider(client, "local-test-token").fetch("20")
+    assert post.media[0].url == "" and post.media[0].video_url == f"{CDN}/a.mp4"
+
+    app, transport, service, provider, _ = await make_app()
+    provider.fetch.return_value = post
+    async with app:
+        await app.process_update(update(app, "/video https://x.com/jack/status/20"))
+        service.media.load_video.assert_awaited_once_with(f"{CDN}/a.mp4")
+        assert any(name == "sendVideo" for name, _ in transport.calls)

@@ -203,8 +203,12 @@ def _media(
         elif kind in ("video", "gif", "animated_gif"):
             key = "preview_image_url" if official else "thumbnail_url"
             url = _image_url(item.get(key))
-            if url:
-                video_url, duration = _video_source(item, official=official)
+            video_url, duration = _video_source(item, official=official)
+            if not url:
+                warnings.append("A video attachment has no usable still preview.")
+            # A playable clip is kept without a preview: /image shows a placeholder,
+            # and /video still plays it in an empty slot.
+            if url or video_url:
                 result.append(
                     Media(
                         url=url,
@@ -216,8 +220,6 @@ def _media(
                     )
                 )
                 warnings.append(STILL_PREVIEWS)
-            else:
-                warnings.append("A video attachment has no usable still preview.")
         else:
             warnings.append("An unsupported media attachment is not shown.")
     return tuple(result)
