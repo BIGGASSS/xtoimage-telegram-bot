@@ -340,6 +340,21 @@ async def test_real_frame_measures_the_thumbnail_slot(renderer: Renderer) -> Non
 
 
 @pytest.mark.browser
+@pytest.mark.parametrize(("section", "height"), [("quote", 300), ("parent", 320)])
+async def test_real_frame_without_preview_in_quote_or_parent(
+    renderer: Renderer,  # noqa: F811
+    section: str,
+    height: int,
+) -> None:
+    # A single preview-less clip: .single section rules must not collapse the slot.
+    inner = card_post(id="2", author_handle="other", text="Inner", media=(Media("", kind="video"),))
+    post = card_post(**{section: inner})
+    frame = await renderer.render_frame(post, RenderAssets(), "light", (section, 0))  # type: ignore[arg-type]
+    assert frame.slot.height == height
+    assert frame.slot.width > 300
+
+
+@pytest.mark.browser
 @needs_ffmpeg
 async def test_end_to_end_card_video(renderer: Renderer, tmp_path: Path) -> None:  # noqa: F811
     clip = Media("", kind="video")

@@ -118,9 +118,10 @@ body { font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', 'Noto Sans', 'Arial',
   padding: 7px 16px 7px 12px; color: #fff; background: rgba(0, 0, 0, .72);
   font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: .2px; }
 .video-label svg { width: 18px; height: 18px; fill: currentColor; }
-.media.live-empty, .single .media.live-empty { height: 540px; background: #000; }
-.quote .media.live-empty { height: 300px; }
-.parent .media.live-empty { height: 320px; }
+/* An id selector, so section and .single heights never collapse the empty slot. */
+#live.live-empty { height: 540px; max-height: none; background: #000; }
+.quote #live.live-empty { height: 300px; }
+.parent #live.live-empty { height: 320px; }
 .fill-black #live { filter: brightness(0); }
 .fill-white #live { filter: brightness(0) invert(1); }
 .play { position: absolute; top: 50%; left: 50%; width: 88px; height: 88px;
