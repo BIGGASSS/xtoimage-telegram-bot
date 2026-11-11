@@ -1,29 +1,41 @@
 # X to Image · Telegram Bot
 
-Paste a public X/Twitter post link into Telegram. Get a clean, attributed image card with its text, author, photos, quoted post and, for replies, the post being replied to. Self-hosted, with light/dark themes and original PNG downloads.
+A self-hosted Telegram bot that turns a public X/Twitter post link into a clean image card. The card shows the author, full text, photos, quoted post and, for replies, the post being replied to.
 
-An independent implementation inspired by the simple **link → image** experience of xtoimage.com. It does not call that site, copy its code/assets, or create a public screenshot gallery. It is not affiliated with X, Telegram, FxEmbed or xtoimage.com.
+<p align="center">
+  <img src="docs/examples/image-rich-light.png" alt="Light card with two images, a video thumbnail and a quoted post" width="49%">
+  <img src="docs/examples/reply-dark.png" alt="Dark card showing a reply below the post it replies to" width="49%">
+</p>
 
-## What works
+<p align="center">
+  <img src="docs/examples/text-only-dark.png" alt="Dark text-only card with mixed-script text" width="70%">
+</p>
 
-- Public `x.com` and `twitter.com` status links, including mobile and `/i/status/` variants
-- Author name, handle, avatar, full supplied post text, timestamp and available engagement counts
-- Up to four photos or video thumbnails, plus one quoted post
-- Replies include the post they reply to, shown above the reply with a conversation line
-- `/theme light` and `/theme dark`; `/file <link>` sends an uncompressed PNG
-- Clear responses for unavailable/protected posts, provider failures, oversized content and rate limits
-- Optional numeric Telegram user allowlist; private chats only by default
-- Bounded concurrency, timeouts and media sizes; no database or screenshot history
+<sub>Demo cards use fictional fixture data. Regenerate them with <code>uv run python scripts/render_demo.py</code>.</sub>
 
-Videos are represented by still thumbnails. Longer threads (beyond the direct parent), polls, articles, cards and deeper quote chains are not fully reproduced; missing content is explicitly noted. Posts above the 12,000-character safety limit or the renderer’s maximum height are rejected rather than silently cropped. Generated images are snapshots, not live embeds.
+This project was inspired by the **link → image** flow on xtoimage.com, but it's a separate implementation. It doesn't call that site or use its code or assets, and it has no public gallery. It isn't affiliated with X, Telegram, FxEmbed or xtoimage.com.
 
-## Quick start with Docker
+## Features
 
-1. Create a bot using Telegram’s official [@BotFather](https://t.me/BotFather). Keep its token private. Never paste it into an issue, repository, screenshot or chat with an assistant.
-2. Clone this repository and copy `.env.example` to `.env`.
-3. Enter `TELEGRAM_BOT_TOKEN` in that local file. Keep `POST_PROVIDER=fxtwitter` for the no-key third-party provider, or choose the official X provider below.
-4. Set `ALLOWED_USER_IDS` to your numeric Telegram ID. If you don’t know it, start the bot, send `/id`, then add that ID and restart. An empty allowlist permits any user who discovers the bot to use it in private chats.
-5. Run:
+- Accepts `x.com` and `twitter.com` status links, including mobile and `/i/status/` URLs
+- Shows the author's name, handle and avatar, the full post text, the timestamp, and reply/repost/like counts
+- Shows up to four photos or video thumbnails and one quoted post
+- For replies, shows the replied-to post above the reply with a connecting line and a "Replying to @handle" label
+- Has light and dark themes, plus a full-quality PNG download with `/file`
+- Uses Noto fonts in the Docker image, so emoji, CJK and RTL scripts render correctly
+- Gives clear error messages for deleted or protected posts, provider failures, oversized posts and rate limits
+- Supports an optional allowlist of user IDs and only answers private chats by default
+- Has no database and keeps no image history
+
+**What it doesn't do:** Videos appear as still thumbnails. Threads longer than the direct parent, polls, articles, link cards and nested quotes aren't fully reproduced, and the caption says when something is left out. Posts over 12,000 characters or taller than 6,000 px are rejected rather than cropped. The images are fixed snapshots and won't change if the post is edited or deleted.
+
+## Quick start (Docker)
+
+1. Create a bot with [@BotFather](https://t.me/BotFather). Keep the token private.
+2. Clone this repo and run `cp .env.example .env`.
+3. Set `TELEGRAM_BOT_TOKEN` in `.env`. The default `POST_PROVIDER=fxtwitter` doesn't need an X key.
+4. Set `ALLOWED_USER_IDS` to your numeric Telegram ID. If you don't know it, start the bot, send `/id`, then add the ID and restart. If you leave the list empty, anyone who finds the bot can use it in private chats.
+5. Start the bot:
 
 ```sh
 chmod 600 .env
@@ -31,30 +43,33 @@ docker compose up --build -d
 docker compose logs --tail=50 -f bot
 ```
 
-Open your bot in Telegram, tap Start, and send a public post link. Stop with `docker compose down`. Run exactly one polling instance for each bot token. No inbound port, webhook, public domain or paid hosting subscription is required, but the process needs a computer/server that stays on.
+Then open your bot in Telegram and send it a post link. To stop it, run `docker compose down`.
 
-**Existing webhook?** The app refuses to replace it. Remove it intentionally or use a separate bot. It does not discard pending updates at startup.
+The bot uses long polling, so it needs no webhook, open port or domain. It does need a machine that stays on. Run only one instance per bot token. If the token already has a webhook, the bot won't start; it never removes a webhook on its own.
 
-### Commands
+## Commands
 
 | Command | Result |
 | --- | --- |
-| a post URL, or `/image <URL>` | Shareable photo preview |
-| `/file <URL>` | Original PNG document |
-| `/theme light` / `/theme dark` | Your style until the process restarts |
-| `/id` | Your numeric Telegram user ID |
-| `/privacy` | Data flow and provider disclosure |
-| `/help` | Usage and limits |
+| a post URL, or `/image <URL>` | Sends the card as a photo |
+| `/file <URL>` | Sends the original PNG as a file (Telegram compresses photos) |
+| `/theme light` / `/theme dark` | Sets your theme until the bot restarts |
+| `/id` | Shows your numeric Telegram user ID |
+| `/privacy` | Explains how links and images are handled |
+| `/help`, `/start` | Shows usage and limits |
 
-Use `/file` when exact quality matters: Telegram can recompress photos. The original-post button links back to X.
+Each result includes a button that opens the original post on X.
 
-## Choose a post provider
+## Post providers
 
 ### FxTwitter / FxEmbed (default)
 
-`POST_PROVIDER=fxtwitter` uses the documented [FxEmbed v2 status API](https://docs.fxembed.com/api/twitter/operations/2statusid/). No X credential is required. It sends the post ID to an independent third-party service, then downloads supported images from `pbs.twimg.com`. For a reply, it makes a second request for the replied-to post; if that fails, the reply still renders and the caption notes it. Cards use the provider's display text rather than raw text, so hidden photo/video and quote attachment links are not printed as extra `t.co` URLs.
+`POST_PROVIDER=fxtwitter` uses the public [FxEmbed v2 status API](https://docs.fxembed.com/api/twitter/operations/2statusid/), which doesn't need an X account. The bot sends it the post ID and downloads images from `pbs.twimg.com`.
 
-This is an **unofficial dependency**, with its own policies, rate limits and availability. It may break or return incomplete information when X changes. This project does not log in to X, scrape protected pages, bypass CAPTCHAs or evade access restrictions. Evaluate the provider and relevant terms for your intended use. Its open-source license does not grant rights to other people’s posts.
+- For a reply, the bot makes a second request to get the parent post. If that request fails, the reply still renders and the caption says so.
+- Text comes from the provider's display field, so hidden media and quote links don't show up as stray `t.co` URLs.
+
+FxEmbed is an unofficial third-party service with its own rate limits and uptime. It can break when X changes. This project doesn't log in to X, scrape protected content or get around access controls.
 
 ### Official X API
 
@@ -63,61 +78,81 @@ POST_PROVIDER=x_api
 X_BEARER_TOKEN=your-token-kept-private
 ```
 
-Use your own [X developer access](https://docs.x.com/x-api/introduction), current plan/credits and permissions. The adapter uses the current X OpenAPI `post.fields` schema and also normalizes older tweet-shaped response data. Replied-to posts come from the same request's `referenced_posts` expansion, so replies cost no extra API call. No X account, paid access or key is provisioned by this project. The adapter is fixture-tested; a real authenticated X request must be verified with your own account before production use. There is no automatic fallback from X to a third party.
+This option needs your own [X developer access](https://docs.x.com/x-api/introduction). The parent post comes back in the same response through the `referenced_posts` expansion, so replies don't cost an extra request. The adapter handles both the current `post.fields` format and the older tweet-shaped format. It's tested against fixtures only, so check it with a real request before relying on it. The bot never falls back to FxEmbed.
 
-## Native Python setup
+## Configuration
 
-Python 3.12 or 3.13 and [uv](https://docs.astral.sh/uv/) are required.
+All settings come from environment variables. See [`.env.example`](.env.example).
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `TELEGRAM_BOT_TOKEN` / `_FILE` | — | Required. Set only one of the two. |
+| `POST_PROVIDER` | `fxtwitter` | `fxtwitter` or `x_api` |
+| `X_BEARER_TOKEN` / `_FILE` | — | Required for `x_api` |
+| `ALLOWED_USER_IDS` | empty | Comma-separated numeric IDs. If empty, anyone can use the bot. |
+| `PRIVATE_CHATS_ONLY` | `true` | Set to `false` to allow group chats |
+| `DEFAULT_THEME` | `light` | `light` or `dark` |
+| `MAX_CONCURRENCY` | `2` | Renderer job limit (1–4). Polling stays sequential, so raising this doesn't increase throughput. |
+| `USER_COOLDOWN_SECONDS` | `10` | Minimum wait between one user's requests |
+| `CHROMIUM_EXECUTABLE_PATH` | — | Uses a system Chromium (native installs only) |
+
+The `_FILE` variants read a secret from a mounted file. For Docker, add a read-only mount in Compose. Never build secrets into the image or commit `.env`.
+
+**Built-in limits:** The bot handles one update at a time, with up to 32 updates queued. A conversion times out after 90 seconds and a network request after 20 seconds. Provider responses are capped at 2 MB, and source images at 8 MB and 16 megapixels.
+
+## Running without Docker
+
+You need Python 3.12 or 3.13 and [uv](https://docs.astral.sh/uv/).
 
 ```sh
 uv sync --locked --group dev
 uv run playwright install --with-deps chromium
-# Export TELEGRAM_BOT_TOKEN and optional settings securely in your shell/service.
-# The Python entrypoint does not automatically read .env; Compose does.
+export TELEGRAM_BOT_TOKEN=...   # the Python entrypoint does not read .env
 uv run xtoimage-bot
 ```
 
-For emoji/CJK on Debian/Ubuntu, install `fonts-noto-color-emoji` and `fonts-noto-cjk`. Other scripts depend on installed fonts. A system browser can be selected with `CHROMIUM_EXECUTABLE_PATH`. Native installs should run under a dedicated unprivileged service account. Proxy settings such as `HTTPS_PROXY`/`ALL_PROXY` are honored for API traffic; use only proxies you trust with your bot credentials.
-
-## Configuration
-
-See [`.env.example`](.env.example). Tokens can also be read from `TELEGRAM_BOT_TOKEN_FILE` and `X_BEARER_TOKEN_FILE` for an operator-managed secret mount. Do not set both a secret and its `_FILE` option. File paths are container-local; add a read-only Compose mount when using this option. Never bake secrets into the Docker image or commit `.env`.
-
-The polling application processes one update at a time, providing real backpressure instead of spawning an unbounded task backlog. Default limits: one active conversion, ten-second user cooldown, 32 queued Telegram updates, 90-second conversion deadline, 20-second outbound request deadline, 2 MB provider JSON, 8 MB per source image, 16 megapixels per decoded source image. The reusable renderer/admission components support up to four concurrent jobs via MAX_CONCURRENCY, but this does not increase the polling application’s sequential throughput. Commands wait behind an active conversion.
+Install `fonts-noto-color-emoji` and `fonts-noto-cjk` (Debian/Ubuntu) for emoji and CJK text. Run the bot under its own unprivileged user. The API client respects `HTTPS_PROXY` and `ALL_PROXY`.
 
 ## Security and privacy
 
-- Submitted URLs are parsed, never visited. Only fixed API hosts and `pbs.twimg.com` are requested; redirects and arbitrary media hosts are rejected
-- Images are decoded, size-checked and re-encoded as PNG, stripping metadata before rendering
-- HTML text is escaped; JavaScript, external browser networking and service workers are disabled. Only validated inline PNGs are rendered
-- Chromium uses Playwright’s default launch settings. The browser’s OS sandbox is not a security boundary here; use the supplied unprivileged, read-only, capability-dropped container and keep dependencies patched
-- The bot retains bounded cooldown/theme state in memory. It creates no persistent post/image archive or public gallery. Chromium may use temporary profile/cache files under `/tmp`, removed on context/process cleanup; the supplied container uses ephemeral tmpfs
-- Logs intentionally exclude tokens, request URLs, message content and raw exceptions. Provider and Telegram retention policies are separate
-- Your post ID reaches the selected provider; rendered content reaches Telegram and the chat recipients. Group use is opt-in via `PRIVATE_CHATS_ONLY=false`; keep Telegram’s bot privacy mode enabled unless you deliberately need broader access
+- **Links are never opened.** The bot reads the post ID from the URL and only contacts the provider API and `pbs.twimg.com`. It doesn't follow redirects or fetch images from other hosts.
+- **Images are cleaned before use.** Each one is decoded, size-checked and re-encoded as PNG, which removes its metadata.
+- **The renderer is isolated.** Post text is HTML-escaped, and JavaScript, network access and service workers are turned off in the browser. Only checked inline PNGs are drawn.
+- **The container is locked down.** It runs as an unprivileged user with a read-only filesystem and no extra capabilities, and `/tmp` is temporary memory storage. Don't rely on Chromium's sandbox as a security boundary, and keep the image updated.
+- **No post or image archive is kept.** Cooldowns and theme choices stay in memory, with a size limit. Chromium may write temporary profile and cache files under `/tmp`, which are removed when the browser closes. The Compose setup keeps `/tmp` in memory, but a native install writes these files to disk. Logs don't include tokens, URLs, message text or raw exceptions.
+- **Some data does leave the bot.** The post ID goes to the chosen provider, and the finished image goes to Telegram and the people in the chat.
 
-Only convert and redistribute content you have permission to use. Preserve source attribution. See [X’s display requirements](https://docs.x.com/developer-terms/display-requirements), [developer guidelines](https://docs.x.com/developer-guidelines) and [terms](https://x.com/en/tos). A static exported image cannot update itself after edits/deletion, so this tool does not promise compliance with every live-display or removal obligation. Operators are responsible for their usage and for handling removal requests, including copies shared to Telegram.
+Only share content you have the right to use, and keep the attribution. See X's [display requirements](https://docs.x.com/developer-terms/display-requirements), [developer guidelines](https://docs.x.com/developer-guidelines) and [terms](https://x.com/en/tos). Because an image doesn't update after a post is edited or deleted, the person running the bot is responsible for handling removal requests.
 
-## Development and tests
+## Development
 
 ```sh
-uv run ruff check .
-uv run ruff format --check .
+uv run ruff check . && uv run ruff format --check .
 uv run mypy src
 uv run pytest -q
-uv run python scripts/render_demo.py
+uv run python scripts/render_demo.py   # writes docs/examples/*.png
 ```
 
-Tests cover URL/SSRF boundaries, redirects and payload limits, normalized Fx/X fixtures, unavailable quotes and reply parents, escaped HTML, actual Chromium rendering, and a real python-telegram-bot update pipeline backed by a fake Telegram transport. No credential is required and CI makes no live X/Telegram requests. Browser tests require Chromium; install it before running the full suite.
+The tests cover:
 
-CI also builds and smoke-tests the locked Docker image and saves synthetic image previews as a short-lived Actions artifact. Public provider availability is intentionally a separate manual smoke check, not a flaky CI dependency.
+- URL parsing and blocking of unexpected hosts
+- Redirect and payload limits
+- FxEmbed and X API fixtures
+- Missing quotes and missing parent posts
+- HTML escaping
+- Rendering in a real Chromium browser
+- The full python-telegram-bot pipeline against a fake Telegram server
 
-## Project map
+The tests don't need credentials or make any live X or Telegram requests. The browser tests need Chromium. CI also builds the Docker image, runs a smoke test on it, and uploads the demo renders as a build artifact.
 
-- `src/xtoimage_bot/bot.py`: commands, access checks, rate control and delivery
-- `providers.py`: FxEmbed and official X adapters
-- `urls.py`, `network.py`, `media.py`: input and outbound resource boundaries
-- `render.py`: isolated HTML-to-PNG renderer
-- `tests/`: offline fixtures and integration tests
-- `Dockerfile`, `compose.yaml`: self-hosting
+### Project layout
 
-No Telegram bot token or hosting service is included. Source implementation and tests can be used immediately; running a live bot requires your privately configured token and an always-on host.
+| Path | Contents |
+| --- | --- |
+| `src/xtoimage_bot/bot.py` | Commands, access checks, rate limiting and sending results |
+| `src/xtoimage_bot/providers.py` | FxEmbed and X API adapters, including parent-post lookup |
+| `src/xtoimage_bot/urls.py`, `network.py`, `media.py` | URL parsing, network requests and image checks |
+| `src/xtoimage_bot/render.py` | Card HTML and the Chromium screenshot step |
+| `scripts/render_demo.py` | Renders the demo cards from offline fixtures |
+| `tests/` | Offline fixtures and integration tests |
+| `Dockerfile`, `compose.yaml` | Self-hosting setup |
