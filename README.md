@@ -159,7 +159,7 @@ The tests cover:
 - Making `/video` clips with a real ffmpeg, including keeping the card's rounded corners
 - The full python-telegram-bot pipeline against a fake Telegram server
 
-The tests don't need credentials or make any live X or Telegram requests. The browser tests need Chromium, and the video tests need ffmpeg; each is skipped if it's missing. CI also builds the Docker image, runs a smoke test on it, and uploads the demo renders as a build artifact.
+The tests don't need credentials or make any live X or Telegram requests. The browser tests need Chromium, and the video tests need ffmpeg; each is skipped if it's missing. CI runs lint and type checks, runs the tests, and builds the Docker image and smoke-tests it.
 
 ### Project layout
 
