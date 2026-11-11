@@ -30,68 +30,112 @@ MAX_ASSET_PIXELS = 16_000_000
 RENDER_TIMEOUT_SECONDS = 35
 _PNG_PREFIX = "data:image/png;base64,"
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+_PLACEHOLDER_TONES = 6
+
+# Static, trusted inline icons (Material Symbols-style paths). Never built from post data.
+_ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.14v13.72L19 12z"/></svg>'
+_ICONS = {
+    "replies": (
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14'
+        'a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm0 14H5.17L4 17.17V4h16v12z"/></svg>'
+    ),
+    "reposts": (
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7z'
+        'm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>'
+    ),
+    "likes": (
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 '
+        "12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 "
+        '19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>'
+    ),
+}
 
 _CSS = """
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; width: 1080px; }
-body { font-family: 'Inter', 'Arial', 'Noto Sans', 'Noto Color Emoji', sans-serif; }
+body { font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', 'Noto Sans', 'Arial',
+  'Noto Sans CJK JP', 'Noto Color Emoji', sans-serif;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 #capture {
   width: 1080px; color: var(--ink);
   background: var(--paper);
-  --ink: #18232d; --muted: #677481; --subtle: #84909a;
-  --paper: #ffffff; --line: #e6ebee; --quote: #f8fafb; --media: #e8edf0;
+  --ink: #0f1419; --muted: #536471; --subtle: #8b98a5;
+  --paper: #ffffff; --line: #e7ecf0; --quote: #ffffff; --media: #eff3f4;
+  --like: #f91880;
 }
 #capture.dark {
-  --ink: #f1f5f7; --muted: #a1b0bc; --subtle: #8396a6;
-  --paper: #16232e; --line: #2c3b47; --quote: #1b2b38; --media: #0f1a22;
+  --ink: #e7e9ea; --muted: #8b98a5; --subtle: #6e7c89;
+  --paper: #15202b; --line: #2f3d4b; --quote: #15202b; --media: #1e2c3a;
+  --like: #f91880;
 }
-.card { padding: 44px; }
-.author { display: flex; gap: 18px; align-items: center; min-width: 0; }
-.avatar { width: 76px; height: 76px; flex: 0 0 76px; border-radius: 50%;
-  object-fit: cover; background: var(--media); }
+.card { padding: 56px 60px 52px; }
+.author { display: flex; gap: 20px; align-items: center; min-width: 0; }
+.avatar { width: 84px; height: 84px; flex: 0 0 84px; border-radius: 50%;
+  object-fit: cover; background: var(--media);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .04); }
 .avatar.placeholder { display: flex; align-items: center; justify-content: center;
-  color: var(--muted); font-size: 28px; font-weight: 700; }
+  color: #fff; font-size: 34px; font-weight: 700; background: #1d9bf0; }
+.avatar.tone1 { background: #7856ff; } .avatar.tone2 { background: #00ba7c; }
+.avatar.tone3 { background: #ff7a00; } .avatar.tone4 { background: #f91880; }
+.avatar.tone5 { background: #536471; }
 .identity { min-width: 0; flex: 1; }
-.name { font-size: 29px; line-height: 1.3; font-weight: 750; overflow-wrap: anywhere; }
-.handle { font-size: 22px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
-.platform { font-size: 34px; line-height: 1; padding-left: 16px; align-self: flex-start;
+.name { font-size: 30px; line-height: 1.25; font-weight: 700; letter-spacing: -.2px;
+  overflow-wrap: anywhere; }
+.handle { margin-top: 2px; font-size: 24px; line-height: 1.35; color: var(--muted);
+  overflow-wrap: anywhere; }
+.platform { font-size: 38px; line-height: 1; padding-left: 16px; align-self: flex-start;
   color: var(--ink); font-weight: 500; }
-.body { margin-top: 30px; font-size: 32px; line-height: 1.48; letter-spacing: -.3px;
+.body { margin-top: 28px; font-size: 34px; line-height: 1.42; letter-spacing: -.2px;
   white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext; }
 .media-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px; margin-top: 28px; border-radius: 19px; overflow: hidden; }
+  gap: 4px; margin-top: 30px; border-radius: 24px; overflow: hidden;
+  border: 1px solid var(--line); background: var(--line); }
 .media-grid.single { grid-template-columns: minmax(0, 1fr); }
 .media { margin: 0; position: relative; background: var(--media); min-width: 0;
-  height: 310px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  height: 340px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
 .media img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.single .media { height: auto; max-height: 570px; }
-.single .media img { max-height: 570px; height: auto; }
-.media-grid.three .media:first-child { grid-column: span 2; height: 350px; }
+.single .media { height: auto; max-height: 640px; }
+.single .media img { max-height: 640px; height: auto; }
+.media-grid.three .media:first-child { grid-column: span 2; height: 380px; }
 .media.unavailable, .single .media.unavailable { height: 240px; padding: 32px;
   font-size: 21px; line-height: 1.45; color: var(--muted); text-align: center; }
-.video-label { position: absolute; bottom: 16px; left: 16px; border-radius: 7px;
-  padding: 8px 12px; color: #fff; background: rgba(12, 21, 29, .83);
-  font-size: 16px; line-height: 20px; letter-spacing: .3px; }
-.quote { margin-top: 28px; padding: 26px; border: 1px solid var(--line);
-  border-radius: 21px; background: var(--quote); }
-.quote .avatar { width: 46px; height: 46px; flex-basis: 46px; font-size: 20px; }
-.quote .author { gap: 12px; }
-.quote .name { font-size: 22px; }
-.quote .handle { font-size: 18px; }
-.quote .body { margin-top: 18px; font-size: 25px; line-height: 1.48; letter-spacing: 0; }
-.quote .media-grid { margin-top: 20px; gap: 8px; border-radius: 13px; }
-.quote .media { height: 230px; }
-.quote .single .media { height: auto; max-height: 390px; }
-.quote .single img { max-height: 390px; }
-.quote .three .media:first-child { height: 260px; }
+.video-label { position: absolute; bottom: 18px; left: 18px; border-radius: 999px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 16px 7px 12px; color: #fff; background: rgba(0, 0, 0, .72);
+  font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: .2px; }
+.video-label svg { width: 18px; height: 18px; fill: currentColor; }
+.play { position: absolute; top: 50%; left: 50%; width: 88px; height: 88px;
+  margin: -44px 0 0 -44px; border-radius: 50%; background: rgba(15, 20, 25, .72);
+  border: 3px solid rgba(255, 255, 255, .9); display: flex; align-items: center;
+  justify-content: center; }
+.play svg { width: 38px; height: 38px; margin-left: 5px; fill: #fff; }
+.quote { margin-top: 30px; padding: 24px 26px 26px; border: 1px solid var(--line);
+  border-radius: 24px; background: var(--quote); }
+.quote .author { gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.quote .avatar { width: 36px; height: 36px; flex-basis: 36px; font-size: 17px;
+  align-self: center; }
+.quote .identity { display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 0 10px; min-width: 0; }
+.quote .name { font-size: 24px; }
+.quote .handle, .quote .when { font-size: 22px; margin-top: 0; color: var(--muted); }
+.quote .when::before { content: "·"; margin-right: 10px; }
+.quote .body { margin-top: 14px; font-size: 27px; line-height: 1.42; letter-spacing: 0; }
+.quote .media-grid { margin-top: 18px; gap: 3px; border-radius: 16px; }
+.quote .media { height: 240px; }
+.quote .single .media { height: auto; max-height: 420px; }
+.quote .single img { max-height: 420px; }
+.quote .three .media:first-child { height: 270px; }
 .quote .unavailable, .quote .single .unavailable { height: 150px; font-size: 18px; }
-.quote .source { margin-top: 20px; padding-top: 16px; font-size: 16px; }
-.source { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 24px;
-  font-size: 18px; line-height: 1.6; color: var(--muted); overflow-wrap: anywhere; }
-.timestamp { margin-bottom: 3px; }
-.counts { display: flex; flex-wrap: wrap; gap: 12px 30px; margin-top: 20px;
-  font-size: 18px; line-height: 1.5; color: var(--muted); }
-.counts b { font-weight: 700; color: var(--ink); margin-right: 6px; }
+.source { margin-top: 32px; font-size: 22px; line-height: 1.5; color: var(--muted);
+  overflow-wrap: anywhere; }
+.counts { display: flex; flex-wrap: wrap; gap: 14px 40px; margin-top: 22px;
+  padding-top: 22px; border-top: 1px solid var(--line);
+  font-size: 22px; line-height: 1.4; color: var(--muted); }
+.counts > span { display: inline-flex; align-items: center; }
+.counts svg { width: 24px; height: 24px; margin-right: 10px; fill: var(--muted); }
+.counts .likes svg { fill: var(--like); }
+.counts b { font-weight: 700; color: var(--ink); margin-right: 7px;
+  font-variant-numeric: tabular-nums; }
 """
 
 
@@ -123,20 +167,28 @@ def _handle(post: Post) -> str:
     return "@" + post.author_handle.lstrip("@")
 
 
-def _avatar(name: str, asset: str) -> str:
+def _avatar(name: str, asset: str, seed: str = "") -> str:
     if asset:
         return f'<img class="avatar" src="{_validate_asset(asset)}" alt="">'
     initial = next((character for character in name.strip() if not character.isspace()), "?")
-    return f'<span class="avatar placeholder" aria-hidden="true">{_text(initial)}</span>'
+    # Deterministic, data-independent class name: only a small integer reaches the markup.
+    tone = sum((seed or name).encode("utf-8")) % _PLACEHOLDER_TONES
+    return (
+        f'<span class="avatar placeholder tone{tone}" aria-hidden="true">'
+        f"{_text(initial.upper())}</span>"
+    )
 
 
 def _author(post: Post, avatar: str, *, quote: bool = False) -> str:
+    when = _timestamp(post.created_at) if quote else ""
     return (
         '<header class="author">'
-        + _avatar(post.author_name, avatar)
+        + _avatar(post.author_name, avatar, post.author_handle)
         + '<div class="identity">'
         + f'<div class="name" dir="auto">{_text(post.author_name)}</div>'
-        + f'<div class="handle">{_text(_handle(post))}</div></div>'
+        + f'<div class="handle">{_text(_handle(post))}</div>'
+        + (f'<div class="when">{_text(when)}</div>' if when else "")
+        + "</div>"
         + ("" if quote else '<span class="platform" aria-label="X">𝕏</span>')
         + "</header>"
     )
@@ -157,7 +209,8 @@ def _media(post: Post, assets: tuple[str, ...]) -> str:
         alt = _text(item.alt_text)
         output.append(f'<figure class="media"><img src="{asset}" alt="{alt}">')
         if item.kind == "video":
-            output.append('<figcaption class="video-label">▶ Video thumbnail</figcaption>')
+            output.append(f'<span class="play" aria-hidden="true">{_ICON_PLAY}</span>')
+            output.append('<figcaption class="video-label">Video thumbnail</figcaption>')
         output.append("</figure>")
     output.append("</div>")
     return "".join(output)
@@ -196,7 +249,9 @@ def _counts(post: Post) -> str:
         (post.likes, "likes"),
     ):
         if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-            counts.append(f"<span><b>{value:,}</b>{label}</span>")
+            noun = {"replies": "reply", "reposts": "repost", "likes": "like"}[label]
+            noun = noun if value == 1 else label
+            counts.append(f'<span class="{label}">{_ICONS[label]}<b>{value:,}</b>{noun}</span>')
     return f'<div class="counts">{"".join(counts)}</div>' if counts else ""
 
 
@@ -224,7 +279,6 @@ def build_html(post: Post, assets: RenderAssets, theme: Theme = "light") -> str:
             + _author(quoted, assets.quote_avatar, quote=True)
             + (f'<div class="body" dir="auto">{_text(quoted.text)}</div>' if quoted.text else "")
             + _media(quoted, assets.quote_media)
-            + _source(quoted)
             + "</section>"
         )
     csp = (

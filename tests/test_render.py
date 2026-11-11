@@ -184,7 +184,7 @@ async def test_real_screenshot_light_dark_and_media(renderer: Renderer, post: Po
     light = Image.open(BytesIO(results[0])).convert("RGB")
     dark = Image.open(BytesIO(results[1])).convert("RGB")
     # The card itself fills the canvas: no gradient, margin, shadow, or outer frame.
-    for image, paper in ((light, (255, 255, 255)), (dark, (22, 35, 46))):
+    for image, paper in ((light, (255, 255, 255)), (dark, (21, 32, 43))):
         for point in ((0, 0), (WIDTH - 1, 0), (0, image.height - 1), (WIDTH - 1, image.height - 1)):
             assert image.getpixel(point) == paper
         assert image.getpixel((20, image.height // 2)) == paper
@@ -296,3 +296,16 @@ async def test_concurrent_close_drains_inflight_render_without_deadlock(post: Po
     browser.close.assert_awaited_once()
     with pytest.raises(UserError, match="shutting down"):
         await renderer.render(post, RenderAssets())
+
+
+def test_counts_icons_singular_labels_and_inline_quote_date(post: Post) -> None:
+    quote = replace(post, author_name="", author_handle="quoted", text="Quoted words")
+    document = build_html(replace(post, quote=quote, replies=1, reposts=2), RenderAssets())
+    assert "<b>1</b>reply</span>" in document
+    assert "<b>2</b>reposts</span>" in document
+    assert document.count("<svg") == 3
+    # The quote's timestamp sits in its header rather than a separate footer.
+    assert '<div class="when">02 Oct 2026 · 19:00 UTC</div>' in document
+    assert document.count('<footer class="source">') == 1
+    # Placeholder avatars get a deterministic tone class, never user-controlled markup.
+    assert 'class="avatar placeholder tone' in document
