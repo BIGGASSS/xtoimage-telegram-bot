@@ -125,13 +125,43 @@ def text_fixture() -> tuple[Post, RenderAssets]:
     return post, RenderAssets(avatar=fixture_art()[3])
 
 
+def reply_fixture() -> tuple[Post, RenderAssets]:
+    avatar, first, _, quote_avatar = fixture_art()
+    parent = Post(
+        id="4",
+        url="https://x.com/demo_notes/status/4",
+        author_name="Studio Notes · demo",
+        author_handle="demo_notes",
+        text="What is one small thing you made this week?",
+        created_at="2026-10-02T17:40:00Z",
+    )
+    post = Post(
+        id="5",
+        url="https://x.com/demo_author/status/5",
+        author_name="Maya Chen · demo",
+        author_handle="demo_author",
+        text="A little poster for the studio wall. 🌱",
+        created_at="2026-10-02T18:02:00Z",
+        media=(Media("", alt_text="Green and terracotta abstract test artwork"),),
+        parent=parent,
+        likes=318,
+        reposts=12,
+        replies=5,
+    )
+    return post, RenderAssets(avatar=avatar, media=(first,), parent_avatar=quote_avatar)
+
+
 async def main(output: Path, html_only: bool = False) -> None:
     await asyncio.to_thread(output.mkdir, parents=True, exist_ok=True)
     renderer = Renderer()
     try:
         for theme in ("light", "dark"):
             selected_theme: Theme = "light" if theme == "light" else "dark"
-            for name, fixture in (("image-rich", image_fixture), ("text-only", text_fixture)):
+            for name, fixture in (
+                ("image-rich", image_fixture),
+                ("text-only", text_fixture),
+                ("reply", reply_fixture),
+            ):
                 post, assets = fixture()
                 html_path = output / f"{name}-{theme}.html"
                 await asyncio.to_thread(

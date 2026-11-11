@@ -169,3 +169,24 @@ async def test_quote_warnings_are_delivered():
         await app.process_update(update(app, "https://x.com/jack/status/20"))
         photo = next(p for name, p in transport.calls if name == "sendPhoto")
         assert "Quoted post: A further nested quoted post is not shown." in photo["caption"]
+
+
+async def test_parent_warnings_are_delivered():
+    from dataclasses import replace
+
+    app, transport, _, provider, _ = await make_app()
+    parent = Post(
+        "19",
+        "https://x.com/someone/status/19",
+        "Someone",
+        "someone",
+        "Parent",
+        warnings=("Earlier posts in this conversation are not shown.",),
+    )
+    provider.fetch.return_value = replace(provider.fetch.return_value, parent=parent)
+    async with app:
+        await app.process_update(update(app, "https://x.com/jack/status/20"))
+        photo = next(p for name, p in transport.calls if name == "sendPhoto")
+        assert (
+            "Replied-to post: Earlier posts in this conversation are not shown." in photo["caption"]
+        )

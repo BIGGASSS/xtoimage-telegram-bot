@@ -1,6 +1,6 @@
 # X to Image · Telegram Bot
 
-Paste a public X/Twitter post link into Telegram. Get a clean, attributed image card with its text, author, photos and quoted post. Self-hosted, with light/dark themes and original PNG downloads.
+Paste a public X/Twitter post link into Telegram. Get a clean, attributed image card with its text, author, photos, quoted post and, for replies, the post being replied to. Self-hosted, with light/dark themes and original PNG downloads.
 
 An independent implementation inspired by the simple **link → image** experience of xtoimage.com. It does not call that site, copy its code/assets, or create a public screenshot gallery. It is not affiliated with X, Telegram, FxEmbed or xtoimage.com.
 
@@ -9,12 +9,13 @@ An independent implementation inspired by the simple **link → image** experien
 - Public `x.com` and `twitter.com` status links, including mobile and `/i/status/` variants
 - Author name, handle, avatar, full supplied post text, timestamp and available engagement counts
 - Up to four photos or video thumbnails, plus one quoted post
+- Replies include the post they reply to, shown above the reply with a conversation line
 - `/theme light` and `/theme dark`; `/file <link>` sends an uncompressed PNG
 - Clear responses for unavailable/protected posts, provider failures, oversized content and rate limits
 - Optional numeric Telegram user allowlist; private chats only by default
 - Bounded concurrency, timeouts and media sizes; no database or screenshot history
 
-Videos are represented by still thumbnails. Threads, polls, articles, cards and deeper quote chains are not fully reproduced; missing content is explicitly noted. Posts above the 12,000-character safety limit or the renderer’s maximum height are rejected rather than silently cropped. Generated images are snapshots, not live embeds.
+Videos are represented by still thumbnails. Longer threads (beyond the direct parent), polls, articles, cards and deeper quote chains are not fully reproduced; missing content is explicitly noted. Posts above the 12,000-character safety limit or the renderer’s maximum height are rejected rather than silently cropped. Generated images are snapshots, not live embeds.
 
 ## Quick start with Docker
 
@@ -51,7 +52,7 @@ Use `/file` when exact quality matters: Telegram can recompress photos. The orig
 
 ### FxTwitter / FxEmbed (default)
 
-`POST_PROVIDER=fxtwitter` uses the documented [FxEmbed v2 status API](https://docs.fxembed.com/api/twitter/operations/2statusid/). No X credential is required. It sends the post ID to an independent third-party service, then downloads supported images from `pbs.twimg.com`. Cards use the provider's display text rather than raw text, so hidden photo/video and quote attachment links are not printed as extra `t.co` URLs.
+`POST_PROVIDER=fxtwitter` uses the documented [FxEmbed v2 status API](https://docs.fxembed.com/api/twitter/operations/2statusid/). No X credential is required. It sends the post ID to an independent third-party service, then downloads supported images from `pbs.twimg.com`. For a reply, it makes a second request for the replied-to post; if that fails, the reply still renders and the caption notes it. Cards use the provider's display text rather than raw text, so hidden photo/video and quote attachment links are not printed as extra `t.co` URLs.
 
 This is an **unofficial dependency**, with its own policies, rate limits and availability. It may break or return incomplete information when X changes. This project does not log in to X, scrape protected pages, bypass CAPTCHAs or evade access restrictions. Evaluate the provider and relevant terms for your intended use. Its open-source license does not grant rights to other people’s posts.
 
@@ -62,7 +63,7 @@ POST_PROVIDER=x_api
 X_BEARER_TOKEN=your-token-kept-private
 ```
 
-Use your own [X developer access](https://docs.x.com/x-api/introduction), current plan/credits and permissions. The adapter uses the current X OpenAPI `post.fields` schema and also normalizes older tweet-shaped response data. No X account, paid access or key is provisioned by this project. The adapter is fixture-tested; a real authenticated X request must be verified with your own account before production use. There is no automatic fallback from X to a third party.
+Use your own [X developer access](https://docs.x.com/x-api/introduction), current plan/credits and permissions. The adapter uses the current X OpenAPI `post.fields` schema and also normalizes older tweet-shaped response data. Replied-to posts come from the same request's `referenced_posts` expansion, so replies cost no extra API call. No X account, paid access or key is provisioned by this project. The adapter is fixture-tested; a real authenticated X request must be verified with your own account before production use. There is no automatic fallback from X to a third party.
 
 ## Native Python setup
 
@@ -106,7 +107,7 @@ uv run pytest -q
 uv run python scripts/render_demo.py
 ```
 
-Tests cover URL/SSRF boundaries, redirects and payload limits, normalized Fx/X fixtures, unavailable quotes, escaped HTML, actual Chromium rendering, and a real python-telegram-bot update pipeline backed by a fake Telegram transport. No credential is required and CI makes no live X/Telegram requests. Browser tests require Chromium; install it before running the full suite.
+Tests cover URL/SSRF boundaries, redirects and payload limits, normalized Fx/X fixtures, unavailable quotes and reply parents, escaped HTML, actual Chromium rendering, and a real python-telegram-bot update pipeline backed by a fake Telegram transport. No credential is required and CI makes no live X/Telegram requests. Browser tests require Chromium; install it before running the full suite.
 
 CI also builds and smoke-tests the locked Docker image and saves synthetic image previews as a short-lived Actions artifact. Public provider availability is intentionally a separate manual smoke check, not a flaky CI dependency.
 

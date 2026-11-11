@@ -132,6 +132,48 @@ def test_authored_links_are_preserved_as_post_content(post: Post) -> None:
     assert post.url not in document
 
 
+def test_parent_rendered_above_reply_without_nesting(post: Post) -> None:
+    attack = "<script>alert(1)</script>"
+    grandparent = replace(post, text="DO NOT RENDER GRANDPARENT")
+    parent = replace(
+        post,
+        author_name=attack,
+        author_handle="parent_author",
+        text="Parent words " + attack,
+        parent=grandparent,
+        quote=replace(post, text="DO NOT RENDER PARENT QUOTE"),
+        media=(Media("", alt_text="Parent art"),),
+    )
+    document = build_html(
+        replace(post, text="Reply words", parent=parent),
+        RenderAssets(parent_avatar=png_asset(), parent_media=(png_asset("#123456"),)),
+    )
+    assert document.count('aria-label="Replied-to post"') == 1
+    assert document.count('class="thread-line"') == 1
+    assert "Replying to @parent_author" in document
+    assert document.index("Parent words") < document.index("Reply words")
+    assert "DO NOT RENDER GRANDPARENT" not in document
+    assert "DO NOT RENDER PARENT QUOTE" not in document
+    assert "<script>" not in document
+    assert 'alt="Parent art"' in document
+    # Engagement counts and the platform mark belong only to the reply.
+    assert document.count('class="counts"') <= 1
+    assert document.count('aria-label="X"') == 1
+
+
+def test_no_parent_section_without_parent(post: Post) -> None:
+    document = build_html(post, RenderAssets())
+    assert "Replied-to post" not in document
+    assert "Replying to" not in document
+
+
+def test_rejects_invalid_parent_assets_and_long_parent(post: Post) -> None:
+    with pytest.raises(UserError, match="safely rendered"):
+        build_html(post, RenderAssets(parent_media=("https://evil.test/a.png",)))
+    with pytest.raises(UserError, match="too long"):
+        build_html(replace(post, parent=replace(post, text="x" * 12_001)), RenderAssets())
+
+
 def test_media_slots_remain_aligned_and_limit_four(post: Post) -> None:
     media = (Media("a"), Media("b", kind="video"), Media("c"), Media("d"), Media("e"))
     document = build_html(replace(post, media=media), RenderAssets(media=("", png_asset())))
@@ -188,6 +230,18 @@ async def test_real_screenshot_light_dark_and_media(renderer: Renderer, post: Po
         for point in ((0, 0), (WIDTH - 1, 0), (0, image.height - 1), (WIDTH - 1, image.height - 1)):
             assert image.getpixel(point) == paper
         assert image.getpixel((20, image.height // 2)) == paper
+
+
+@pytest.mark.browser
+async def test_real_screenshot_with_parent_and_quote(renderer: Renderer, post: Post) -> None:
+    parent = replace(post, author_handle="parent", text="What are you building?")
+    reply = replace(post, text="This.", parent=parent, quote=replace(post, text="Quoted"))
+    plain = await renderer.render(replace(reply, parent=None), RenderAssets(), "light")
+    threaded = await renderer.render(reply, RenderAssets(parent_avatar=png_asset()), "dark")
+    plain_image = Image.open(BytesIO(plain))
+    threaded_image = Image.open(BytesIO(threaded))
+    assert threaded_image.width == WIDTH
+    assert threaded_image.height > plain_image.height
 
 
 @pytest.mark.browser

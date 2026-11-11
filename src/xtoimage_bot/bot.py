@@ -25,9 +25,9 @@ HELP = (
     "/theme light or /theme dark — choose your style\n"
     "/id — show your numeric Telegram user ID\n"
     "/privacy — how post links and images are handled\n\n"
-    "Photos and video thumbnails are supported, with one quoted post. "
-    "Private/deleted posts cannot be fetched. Videos are still images; threads and polls "
-    "are not fully captured. Very long posts may not fit in one image."
+    "Photos and video thumbnails are supported, with one quoted post. Replies include the "
+    "post they reply to. Private/deleted posts cannot be fetched. Videos are still images; "
+    "longer threads and polls are not fully captured. Very long posts may not fit in one image."
 )
 
 
@@ -183,7 +183,16 @@ class BotService:
                     if post.quote
                     else ()
                 )
-                warnings = tuple(dict.fromkeys((*post.warnings, *quote_warnings, *assets.warnings)))
+                parent_warnings = (
+                    tuple(f"Replied-to post: {warning}" for warning in post.parent.warnings)
+                    if post.parent
+                    else ()
+                )
+                warnings = tuple(
+                    dict.fromkeys(
+                        (*post.warnings, *parent_warnings, *quote_warnings, *assets.warnings)
+                    )
+                )
                 caption = f"@{post.author_handle}\n{post.url}"
                 if warnings:
                     caption += "\n\n" + "\n".join(warnings)

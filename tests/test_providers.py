@@ -278,7 +278,8 @@ async def test_x_normalizes_both_documented_naming_versions(legacy: bool) -> Non
         assert request.url.path == "/2/tweets/20"
         assert request.headers["authorization"] == "Bearer local-test-token"
         assert (
-            request.url.params["expansions"] == "author_id,attachments.media_keys,referenced_posts"
+            request.url.params["expansions"]
+            == "author_id,attachments.media_keys,referenced_posts,in_reply_to_user_id"
         )
         assert "note_post" in request.url.params["post.fields"]
         return httpx.Response(200, json=x_payload(legacy=legacy))
@@ -325,3 +326,160 @@ async def test_x_error_body_is_not_echoed() -> None:
         with pytest.raises(UserError) as exc:
             await XApiProvider(client, "local-test-token").fetch("20")
     assert "private-detail" not in str(exc.value)
+
+
+def fx_reply_payloads() -> dict[str, dict[str, Any]]:
+    """A reply (30) to a post (20) that itself replies to an earlier post and quotes another."""
+    reply = fixture()
+    reply["status"].update(
+        {
+            "id": "30",
+            "text": "Replying with a photo",
+            "replying_to": {"screen_name": "jack", "status": "20"},
+            "media": fixture("fx_photo.json")["status"]["media"],
+        }
+    )
+    reply["status"]["author"].update({"screen_name": "replier", "name": "Replier"})
+    parent = fixture()
+    parent["status"]["replying_to"] = {"screen_name": "someone", "status": "10"}
+    parent["status"]["quote"] = copy.deepcopy(fixture("fx_photo.json")["status"])
+    return {"30": reply, "20": parent}
+
+
+def fx_client(payloads: dict[str, Any], requests: list[str]) -> httpx.AsyncClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "api.fxtwitter.com"
+        post_id = request.url.path.rsplit("/", 1)[-1]
+        requests.append(post_id)
+        if post_id not in payloads:
+            return httpx.Response(200, json={"code": 404, "message": "not found"})
+        return httpx.Response(200, json=payloads[post_id])
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+async def test_fx_reply_includes_parent_post_one_level() -> None:
+    requests: list[str] = []
+    async with fx_client(fx_reply_payloads(), requests) as client:
+        post = await FxTwitterProvider(client).fetch("30")
+    assert requests == ["30", "20"]
+    assert post.parent is not None
+    assert post.parent.id == "20" and post.parent.author_handle == "jack"
+    assert post.parent.text == "just setting up my twttr"
+    assert post.parent.parent is None and post.parent.quote is None
+    # Single-parent replies no longer claim the conversation is missing.
+    assert not any("conversation is not shown" in w for w in post.warnings)
+    assert any("Earlier posts" in w for w in post.parent.warnings)
+    assert any("quoted post is not shown" in w for w in post.parent.warnings)
+    document = build_html(post, RenderAssets())
+    assert document.count('aria-label="Replied-to post"') == 1
+    assert "Replying to @jack" in document
+    assert document.index("just setting up my twttr") < document.index("Replying with a photo")
+
+
+async def test_fx_legacy_flat_reply_fields_are_supported() -> None:
+    payloads = fx_reply_payloads()
+    payloads["30"]["status"]["replying_to"] = "jack"
+    payloads["30"]["status"]["replying_to_status"] = "20"
+    requests: list[str] = []
+    async with fx_client(payloads, requests) as client:
+        post = await FxTwitterProvider(client).fetch("30")
+    assert post.parent and post.parent.id == "20"
+
+
+@pytest.mark.parametrize(
+    "change", ["missing", "tombstone", "private", "mismatch", "bad_id", "self"]
+)
+async def test_fx_unavailable_parent_still_renders_reply(change: str) -> None:
+    payloads = fx_reply_payloads()
+    status = payloads["30"]["status"]
+    if change == "missing":
+        del payloads["20"]
+    elif change == "tombstone":
+        payloads["20"]["status"] = {"type": "tombstone"}
+    elif change == "private":
+        payloads["20"]["status"]["author"]["protected"] = True
+    elif change == "mismatch":
+        payloads["20"]["status"]["id"] = "21"
+    elif change == "bad_id":
+        status["replying_to"]["status"] = "../20"
+    else:
+        status["replying_to"]["status"] = "30"
+    requests: list[str] = []
+    async with fx_client(payloads, requests) as client:
+        post = await FxTwitterProvider(client).fetch("30")
+    assert post.id == "30" and post.parent is None
+    assert any("replies to is unavailable" in w for w in post.warnings)
+    assert requests.count("30") == 1
+    if change in ("bad_id", "self"):
+        assert requests == ["30"]
+
+
+async def test_fx_parent_rate_limit_does_not_fail_reply() -> None:
+    payloads = fx_reply_payloads()
+    payloads["20"] = {"code": 429, "message": "slow down"}
+    requests: list[str] = []
+    async with fx_client(payloads, requests) as client:
+        post = await FxTwitterProvider(client).fetch("30")
+    assert post.parent is None
+    assert any("replies to is unavailable" in w for w in post.warnings)
+
+
+async def test_fx_reply_in_longer_thread_keeps_conversation_warning() -> None:
+    payloads = fx_reply_payloads()
+    payloads["30"]["thread"] = [{"id": "10"}]
+    requests: list[str] = []
+    async with fx_client(payloads, requests) as client:
+        post = await FxTwitterProvider(client).fetch("30")
+    assert post.parent is not None
+    assert any("conversation is not shown" in w for w in post.warnings)
+
+
+def x_reply_payload() -> dict[str, Any]:
+    payload = x_payload()
+    payload["data"]["referenced_posts"] = [
+        {"type": "replied_to", "id": "19"},
+        {"type": "quoted", "id": "21"},
+    ]
+    payload["data"]["in_reply_to_user_id"] = "13"
+    payload["includes"]["users"].append(
+        {"id": "13", "name": "Parent Author", "username": "parent_author", "protected": False}
+    )
+    payload["includes"]["posts"].append(
+        {
+            "id": "19",
+            "author_id": "13",
+            "text": "The original question",
+            "referenced_posts": [{"type": "replied_to", "id": "18"}],
+        }
+    )
+    return payload
+
+
+async def test_x_reply_includes_parent_from_expansions() -> None:
+    async with client_for(x_reply_payload()) as client:
+        post = await XApiProvider(client, "local-test-token").fetch("20")
+    assert post.parent and post.parent.id == "19"
+    assert post.parent.author_handle == "parent_author"
+    assert post.parent.text == "The original question"
+    assert post.parent.parent is None
+    assert post.quote and post.quote.id == "21"
+    assert not any("conversation is not shown" in w for w in post.warnings)
+    assert any("Earlier posts" in w for w in post.parent.warnings)
+
+
+@pytest.mark.parametrize("change", ["missing_post", "missing_author", "private", "self"])
+async def test_x_unavailable_parent_does_not_fabricate_it(change: str) -> None:
+    payload = x_reply_payload()
+    if change == "missing_post":
+        payload["includes"]["posts"] = [p for p in payload["includes"]["posts"] if p["id"] != "19"]
+    elif change == "missing_author":
+        payload["includes"]["users"] = payload["includes"]["users"][:1]
+    elif change == "private":
+        payload["includes"]["users"][1]["protected"] = True
+    else:
+        payload["data"]["referenced_posts"][0]["id"] = "20"
+    async with client_for(payload) as client:
+        post = await XApiProvider(client, "local-test-token").fetch("20")
+    assert post.id == "20" and post.parent is None
+    assert any("replies to is unavailable" in w for w in post.warnings)
